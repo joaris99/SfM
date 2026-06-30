@@ -1,0 +1,13 @@
+data structure - views, observations, points
+debugging - plotting 3D, plotting 2D, logging
+
+putative points - ROMA, AKAZE, ORB.
+inliers + essential matrix - 5-point algorithm
+calculate pose
+LOOP -  stop when all images are added:
+	bundle adjustment
+	add next image, calculate putative points
+	find point matches from previous images
+	add point matches from latest image
+
+Gaussian splatting.
