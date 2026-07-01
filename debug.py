@@ -1,7 +1,8 @@
 import cv2
 import numpy as np
+from logger import logger, log_timing
 
-
+@log_timing
 def plot_correspondences(
     im1,
     im2,

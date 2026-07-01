@@ -1,14 +1,24 @@
 import cv2
 import numpy as np
-from logger import logger
+from logger import logger, log_timing
 
-def find_correspondences_akaze(im1, im2, akaze):
+@log_timing
+def find_correspondences_akaze(im1, im2):
     logger.info("finding akaze correspondences")
+
+    akaze = cv2.AKAZE_create(threshold=0.0001)
     
     keypoints1, descriptors1 = akaze.detectAndCompute(im1, None)
     keypoints2, descriptors2 = akaze.detectAndCompute(im2, None)
 
     bf = cv2.BFMatcher(cv2.NORM_HAMMING)
+
+    # sift = cv2.SIFT_create()
+
+    # keypoints1, descriptors1 = sift.detectAndCompute(im1, None)
+    # keypoints2, descriptors2 = sift.detectAndCompute(im2, None)
+
+    # bf = cv2.BFMatcher(cv2.NORM_L2)
 
     # KNN matching for Lowe ratio test
     matches = bf.knnMatch(descriptors1, descriptors2, k=2)
