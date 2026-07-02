@@ -25,8 +25,15 @@ folder_name = "my"
 recon = data_structure.Reconstruction()
 
 logger.info("loading images")
-im1 = np.asarray(Image.open(f"images/{folder_name}/frame01.png"))
-im2 = np.asarray(Image.open(f"images/{folder_name}/frame02.png"))
+images = []
+for i in range(36):
+    if i < 9:
+        im = np.asarray(Image.open(f"images/{folder_name}/frame0{i + 1}.png"))
+    else:
+        im = np.asarray(Image.open(f"images/{folder_name}/frame{i + 1}.png"))
+    images.append(im)
+im1 = images[0]
+im2 = images[1]
 
 
 putative1, putative2 = correspondences.find_correspondences_akaze(im1, im2)
@@ -65,22 +72,24 @@ with log_time("add initial views, observations and points"):
         recon.add_observation(p1, v1_id, point_id)
         recon.add_observation(p2, v2_id, point_id)
 
-with log_time("packet info for BA"):
-    camera_flat, point_flat, observations = bundle_adjustment.packet_data(recon)
+for iteration in range(34):
+    """
+    with log_time("packet info for BA"):
+        camera_flat, point_flat, observations = bundle_adjustment.packet_data(recon)
 
-with log_time("bundle Adjustment"):
-    results = bundle_adjustment.bundle_adjustment(camera_flat, point_flat, observations)
-    camera_flat = results.cameras
-    point_flat = results.points
+    with log_time("bundle Adjustment"):
+        results = bundle_adjustment.bundle_adjustment(camera_flat, point_flat, observations)
+        camera_flat = results.cameras
+        point_flat = results.points
 
-with log_time("unpack BA"):
-    bundle_adjustment.unpack_results(recon, camera_flat, point_flat, observations)
+    with log_time("unpack BA"):
+        bundle_adjustment.unpack_results(recon, camera_flat, point_flat, observations)
+    """
+    im_next = images[iteration + 2]
+    im_prev = images[iteration + 1]
+
+    
+    
 
 
-points = []
-for p in recon.points:
-    points.append(recon.points[p].xyz)
-
-pcd = o3d.geometry.PointCloud()
-pcd.points = o3d.utility.Vector3dVector(points)
-o3d.visualization.draw_geometries([pcd])
+debug.plot_3D(recon)

@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from logger import logger, log_timing
+import open3d as o3d
 
 @log_timing
 def plot_correspondences(
@@ -114,3 +115,78 @@ def plot_correspondences(
     cv2.destroyAllWindows()
 
     return canvas
+
+def create_camera_frustum(R, t, scale=0.5, color=[1, 0, 0]):
+    """
+    Create camera frustum as Open3D LineSet.
+
+    R : 3x3 rotation matrix
+    t : 3-vector translation
+    """
+
+    # Camera center in world coordinates
+    C = -R.T @ t
+
+    # Frustum points in camera coordinates
+    points_cam = np.array([
+        [0, 0, 0],           # camera center
+        [-1, -1, 2],
+        [ 1, -1, 2],
+        [ 1,  1, 2],
+        [-1,  1, 2]
+    ]) * scale
+
+    # Transform into world coordinates
+    points_world = (R.T @ points_cam.T).T + C.reshape(1, 3)
+
+    lines = [
+        [0, 1],
+        [0, 2],
+        [0, 3],
+        [0, 4],
+        [1, 2],
+        [2, 3],
+        [3, 4],
+        [4, 1]
+    ]
+
+    colors = [color for _ in lines]
+
+    line_set = o3d.geometry.LineSet()
+
+    line_set.points = o3d.utility.Vector3dVector(points_world)
+    line_set.lines = o3d.utility.Vector2iVector(lines)
+    line_set.colors = o3d.utility.Vector3dVector(colors)
+
+    return line_set
+
+def plot_3D(recon):
+    points = []
+    for p in recon.points:
+        points.append(recon.points[p].xyz)
+
+    R, t = [], []
+    for v in recon.views:
+        R.append(recon.views[v].R)
+        t.append(recon.views[v].t)
+
+
+
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points)
+
+    geometries = [pcd]
+
+    for r, tvec in zip(R, t):
+
+        cam = create_camera_frustum(
+            r,
+            tvec,
+            scale=1.0
+        )
+
+        geometries.append(cam)
+
+    o3d.visualization.draw_geometries(geometries)
+
+
