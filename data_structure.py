@@ -67,7 +67,7 @@ class Reconstruction:
         v = View(
             id = view_id, 
             R = R, 
-            t = t,
+            t = np.asarray(t, dtype=float).reshape(3,),
             image = image, 
             observation_ids = set()
         )
