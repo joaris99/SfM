@@ -8,6 +8,8 @@ class View:
     image: np.ndarray
     R: np.ndarray
     t: np.ndarray
+    keypoints: list
+    descriptors: np.ndarray
     observation_ids: set[int] = field(default_factory=set)
 
 @dataclass
@@ -22,6 +24,7 @@ class Observation:
     xy: np.ndarray
     view_id: int
     point_id: int
+    feature_idx: int
 
 
 class Reconstruction:
@@ -36,7 +39,7 @@ class Reconstruction:
         self.next_point_id = 0
         self.next_obs_id = 0
     
-    def add_observation(self, xy, view_id, point_id):
+    def add_observation(self, xy, view_id, point_id, feature_idx):
 
         if view_id not in self.views:
             raise ValueError(f"view_id {view_id} does not exist")
@@ -51,7 +54,8 @@ class Reconstruction:
             id = obs_id,
             xy = xy,
             view_id = view_id,
-            point_id = point_id
+            point_id = point_id,
+            feature_idx = feature_idx
         )
 
         self.observations[obs_id] = obs
@@ -60,7 +64,7 @@ class Reconstruction:
         self.points[point_id].observation_ids.add(obs_id)
         return obs_id
     
-    def add_view(self, R, t, image):
+    def add_view(self, R, t, keypoints, descriptors, image):
         view_id = self.next_view_id
         self.next_view_id += 1
 
@@ -69,6 +73,8 @@ class Reconstruction:
             R = R, 
             t = np.asarray(t, dtype=float).reshape(3,),
             image = image, 
+            keypoints=keypoints,
+            descriptors=descriptors,
             observation_ids = set()
         )
 

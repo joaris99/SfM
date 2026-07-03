@@ -32,15 +32,18 @@ def find_correspondences_akaze(im1, im2):
 
     # Optional: sort by descriptor distance
     good_matches = sorted(good_matches, key=lambda x: x.distance)
+    good_matches = np.array(good_matches, dtype=object)
 
-    # Transform matched points to 2xN matrices
-    putative1 = np.array(
-        [keypoints1[m.queryIdx].pt for m in good_matches]
-    )
+    return keypoints1, keypoints2, descriptors1, descriptors2, good_matches
 
-    putative2 = np.array(
-        [keypoints2[m.trainIdx].pt for m in good_matches]
-    )
+def get_coordinates(kps1, kps2, matches):
+    pts1, pts2, idx1, idx2 = [], [], [], []
 
-    logger.info(f"shape of putative1 is {putative1.shape}, shape of putative2 is {putative2.shape}")
-    return putative1, putative2
+    for m in matches:
+        pts1.append(kps1[m.queryIdx].pt)
+        pts2.append(kps2[m.trainIdx].pt)
+        idx1.append(m.queryIdx)
+        idx2.append(m.trainIdx)
+
+    return np.array(pts1, dtype=np.float32), np.array(pts2, dtype=np.float32), np.array(idx1), np.array(idx2)
+    

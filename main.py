@@ -24,56 +24,89 @@ K = np.array([[1660.076384971925, 0, 986.3176281647676],
 folder_name = "my"
 recon = data_structure.Reconstruction()
 
-logger.info("loading images")
-images = []
-for i in range(36):
-    if i < 9:
-        im = np.asarray(Image.open(f"images/{folder_name}/frame0{i + 1}.png"))
-    else:
-        im = np.asarray(Image.open(f"images/{folder_name}/frame{i + 1}.png"))
-    images.append(im)
-im1 = images[0]
-im2 = images[1]
+with log_time("load images"):
+    images = []
+    for i in range(36):
+        if i < 9:
+            im = np.asarray(Image.open(f"images/{folder_name}/frame0{i + 1}.png"))
+        else:
+            im = np.asarray(Image.open(f"images/{folder_name}/frame{i + 1}.png"))
+        images.append(im)
+    im1 = images[0]
+    im2 = images[1]
+
+with log_time("find correspondences"):
+    kp1, kp2, desc1, desc2, matches = correspondences.find_correspondences_akaze(im1, im2)
+    pts1, pts2, idx1, idx2 = correspondences.get_coordinates(kp1, kp2, matches)
+  
 
 
-putative1, putative2 = correspondences.find_correspondences_akaze(im1, im2)
 
 with log_time("five-point algorithm"):
     # 5-point algorithm + RANSAC
-    E, mask_E = cv2.findEssentialMat(putative1, putative2, K,  method=cv2.RANSAC, prob=0.9999, threshold=0.5)
-    inlier_mask = mask_E.ravel().astype(bool)
-    inliers1 = putative1[inlier_mask]
-    inliers2 = putative2[inlier_mask]
-    logger.info(f"inliers1.shape = {inliers1.shape}")
-    logger.info(f"inliers2.shape = {inliers2.shape}")
+    E, mask_E = cv2.findEssentialMat(pts1, pts2, K,  method=cv2.RANSAC, prob=0.9999, threshold=0.5)
+    mask_E = mask_E.ravel().astype(bool)
+    matches = matches[mask_E]
+    pts1 = pts1[mask_E]
+    pts2 = pts2[mask_E]
+    idx1 = idx1[mask_E]
+    idx2 = idx2[mask_E]
+    # logger.info(f"inliers1.shape = {inliers1.shape}")
+    # logger.info(f"inliers2.shape = {inliers2.shape}")
 
 with log_time("recover pose"):
     # Recover relative pose
-    _, R, t, mask_pose = cv2.recoverPose(E, inliers1, inliers2, K)
-    inlier_mask = mask_pose.ravel().astype(bool)
-    inliers1 = inliers1[inlier_mask]
-    inliers2 = inliers2[inlier_mask]
-    logger.info(f"inliers1.shape = {inliers1.shape}")
-    logger.info(f"inliers2.shape = {inliers2.shape}")
+    _, R, t, mask_pose = cv2.recoverPose(E, pts1, pts2, K)
+    mask_pose = mask_pose.ravel().astype(bool)
+    matches = matches[mask_pose]
+    pts1 = pts1[mask_pose]
+    pts2 = pts2[mask_pose]
+    idx1 = idx1[mask_pose]
+    idx2 = idx2[mask_pose]
+    # logger.info(f"inliers1.shape = {inliers1.shape}")
+    # logger.info(f"inliers2.shape = {inliers2.shape}")
 
 with log_time("normalize points"):
     # normalize points so that triangulate optimal works
-    inliers1 = cv2.undistortPoints(inliers1.reshape(-1, 1, 2), K, None).reshape(-1, 2)
-    inliers2 = cv2.undistortPoints(inliers2.reshape(-1, 1, 2), K, None).reshape(-1, 2)
+    pts1_norm = cv2.undistortPoints(pts1.reshape(-1, 1, 2), K, None).reshape(-1, 2)
+    pts2_norm = cv2.undistortPoints(pts2.reshape(-1, 1, 2), K, None).reshape(-1, 2)
 
 with log_time("add initial views, observations and points"):
     C1 = np.concat((np.identity(3), np.array([[0], [0], [0]])), axis = 1)
     C2 = np.concat((R, t), axis = 1)
-    v1_id = recon.add_view(np.identity(3), np.array([0, 0, 0]), im1)
-    v2_id = recon.add_view(R, t, im2)
-    for p1, p2 in zip(inliers1, inliers2):
-        point = geometry.triangulate_optimal(C1, C2, p1, p2)
-        point_id = recon.add_point(point)
-        recon.add_observation(p1, v1_id, point_id)
-        recon.add_observation(p2, v2_id, point_id)
+    v1_id = recon.add_view(np.identity(3), np.array([0, 0, 0]), kp1, desc1, im1)
+    v2_id = recon.add_view(R, t, kp2, desc2, im2)
+    
 
+    for i in range(len(idx1)):
+
+        # p1 = np.array(kp1[idx1[i]].pt)
+        # p2 = np.array(kp2[idx2[i]].pt)
+
+        t1 = pts1_norm[i]
+        t2 = pts2_norm[i]
+
+        point = geometry.triangulate_optimal(C1, C2, t1, t2)
+        point_id = recon.add_point(point)
+
+        recon.add_observation(
+            xy=t1,
+            view_id=v1_id,
+            point_id=point_id,
+            feature_idx=idx1[i]
+        )
+
+        recon.add_observation(
+            xy=t2,
+            view_id=v2_id,
+            point_id=point_id,
+            feature_idx=idx2[i]
+        )
+
+
+# for iteration in range(1):
 for iteration in range(34):
-    """
+    
     with log_time("packet info for BA"):
         camera_flat, point_flat, observations = bundle_adjustment.packet_data(recon)
 
@@ -84,12 +117,25 @@ for iteration in range(34):
 
     with log_time("unpack BA"):
         bundle_adjustment.unpack_results(recon, camera_flat, point_flat, observations)
-    """
-    im_next = images[iteration + 2]
+    
+    debug.plot_3D(recon)
+    
     im_prev = images[iteration + 1]
+    im_next = images[iteration + 2]
+
+    
+    prev_view = recon.views[iteration + 1]
+
+    with log_time("find correspondences"):
+        kp_prev, kp_next, desc_prev, desc_next, matches = correspondences.find_correspondences_akaze(im_prev, im_next)
+
+    
+    
+    
+    
+
 
     
     
 
 
-debug.plot_3D(recon)
