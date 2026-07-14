@@ -89,23 +89,14 @@ with log_time("add initial views, observations and points"):
         point = geometry.triangulate_optimal(C1, C2, t1, t2)
         point_id = recon.add_point(point)
 
-        recon.add_observation(
-            xy=t1,
-            view_id=v1_id,
-            point_id=point_id,
-            feature_idx=idx1[i]
-        )
-
-        recon.add_observation(
-            xy=t2,
-            view_id=v2_id,
-            point_id=point_id,
-            feature_idx=idx2[i]
-        )
+        recon.add_observation(xy=t1, view_id=v1_id, point_id=point_id, feature_idx=idx1[i])
+        recon.add_observation(xy=t2, view_id=v2_id, point_id=point_id, feature_idx=idx2[i])
 
 
-# for iteration in range(1):
+
+    
 for iteration in range(34):
+    logger.info(f"iteration {iteration}:")
     
     with log_time("packet info for BA"):
         camera_flat, point_flat, observations = bundle_adjustment.packet_data(recon)
@@ -117,9 +108,13 @@ for iteration in range(34):
 
     with log_time("unpack BA"):
         bundle_adjustment.unpack_results(recon, camera_flat, point_flat, observations)
+
+    ### re-triangulate ###
+
+    ######################
     
-    debug.plot_3D(recon)
-    
+    # debug.plot_3D(recon)
+    print(iteration)
     im_prev = images[iteration + 1]
     im_next = images[iteration + 2]
 
@@ -128,14 +123,83 @@ for iteration in range(34):
 
     with log_time("find correspondences"):
         kp_prev, kp_next, desc_prev, desc_next, matches = correspondences.find_correspondences_akaze(im_prev, im_next)
+        pts1, pts2, idx1, idx2 = correspondences.get_coordinates(kp_prev, kp_next, matches)
+        pts1_norm = cv2.undistortPoints(pts1.reshape(-1, 1, 2), K, None).reshape(-1, 2)
+        pts2_norm = cv2.undistortPoints(pts2.reshape(-1, 1, 2), K, None).reshape(-1, 2)
+    
+    object_points = []
+    image_points = []
+    match_indices = []
+    unmatched_indices = []
 
-    
-    
-    
-    
+    with log_time("find observation point matches"):
+        for i in range(len(idx1)):
+            if idx1[i] in prev_view.feature_to_observation:
+                obs_id = prev_view.feature_to_observation[idx1[i]]
+                point_id = recon.observations[obs_id].point_id
 
-
+                object_points.append(recon.points[point_id].xyz)
+                image_points.append(pts2[i])
+                match_indices.append(i)
+            else:
+                unmatched_indices.append(i)
     
+        object_points = np.asarray(object_points, dtype=np.float32)
+        image_points = np.asarray(image_points, dtype=np.float32)
+
+    with log_time("pnp"):
+        success, rvec, tvec, inliers = cv2.solvePnPRansac(object_points, image_points, K, None, reprojectionError=4.0, 
+                                                        confidence=0.999, iterationsCount=1000, flags=cv2.SOLVEPNP_ITERATIVE)
+        if not success:
+            raise RuntimeError("PnP failed")
+        
+        R, _ = cv2.Rodrigues(rvec)
+        t = tvec.reshape(3)
     
+    with log_time("add views and observations"):
 
+        view_id = recon.add_view(R, t, kp_next, desc_next, im_next)
 
+        for j in inliers.ravel():
+            i = match_indices[j]      # original match index
+
+            obs_id = prev_view.feature_to_observation[idx1[i]]
+            point_id = recon.observations[obs_id].point_id
+
+            recon.add_observation(xy=pts2_norm[i], view_id=view_id, point_id=point_id, feature_idx=idx2[i])
+    
+    C_prev = np.concat((prev_view.R, prev_view.t.reshape(3,1)), axis = 1)
+    C_next = np.concat((recon.views[view_id].R, recon.views[view_id].t.reshape(3,1)), axis = 1)
+
+    threshold = 2e-4
+    
+    for i in unmatched_indices:
+        feat_prev = idx1[i]
+        feat_next = idx2[i]
+
+        y1 = pts1_norm[i]
+        y2 = pts2_norm[i]
+
+        point = geometry.triangulate_optimal(C_prev, C_next, y1, y2)
+
+        # Reject points behind either camera
+        z1 = (C_prev @ np.append(point, 1.0))[2]
+        z2 = (C_next @ np.append(point, 1.0))[2]
+
+        if z1 <= 0 or z2 <= 0:
+            continue
+
+        # Reject large reprojection error
+        err1 = geometry.reprojection_error(C_prev, point, y1)
+        err2 = geometry.reprojection_error(C_next, point, y2)
+
+        if err1 > threshold or err2 > threshold:
+            continue
+
+        point_id = recon.add_point(point)
+
+        recon.add_observation(xy=y1, view_id=prev_view.id, point_id=point_id, feature_idx=feat_prev,)
+        recon.add_observation(xy=y2, view_id=view_id, point_id=point_id, feature_idx=feat_next)
+    
+debug.plot_3D(recon)
+print(len(recon.points))

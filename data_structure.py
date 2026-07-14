@@ -11,6 +11,7 @@ class View:
     keypoints: list
     descriptors: np.ndarray
     observation_ids: set[int] = field(default_factory=set)
+    feature_to_observation: dict[int, int] = field(default_factory=dict)
 
 @dataclass
 class Point3D:
@@ -46,6 +47,9 @@ class Reconstruction:
 
         if point_id not in self.points:
             raise ValueError(f"point_id {point_id} does not exist")
+        
+        if feature_idx in  self.views[view_id].feature_to_observation:
+            raise ValueError(f"Feature {feature_idx} already has an observation.")
 
         obs_id = self.next_obs_id
         self.next_obs_id += 1
@@ -61,6 +65,7 @@ class Reconstruction:
         self.observations[obs_id] = obs
 
         self.views[view_id].observation_ids.add(obs_id)
+        self.views[view_id].feature_to_observation[feature_idx] = obs_id
         self.points[point_id].observation_ids.add(obs_id)
         return obs_id
     
@@ -98,6 +103,7 @@ class Reconstruction:
         obs = self.observations.pop(obs_id)
 
         self.views[obs.view_id].observation_ids.remove(obs_id)
+        del self.view[obs.view_id].feature_to_observation[obs.feature_idx]
         self.points[obs.point_id].observation_ids.remove(obs_id)
     
     def remove_view(self, view_id):

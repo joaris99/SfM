@@ -1,5 +1,21 @@
 import numpy as np
 
+def reprojection_error(P, X, x):
+    """
+    P : (3,4) camera matrix
+    X : (3,) or (4,) 3D point in world coordinates
+    x : (2,) normalized image point
+
+    Returns the Euclidean reprojection error in normalized coordinates.
+    """
+    if X.shape[0] == 3:
+        X = np.append(X, 1.0)
+
+    x_proj = P @ X
+    x_proj = x_proj[:2] / x_proj[2]
+
+    return np.linalg.norm(x_proj - x)
+
 def triangulate_linear(C1, C2, x1, x2):
     """Linear trinagulation of 3D point
     
