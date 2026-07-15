@@ -4,6 +4,11 @@ from pathlib import Path
 from datetime import datetime
 from contextlib import contextmanager
 
+_indent = 0
+
+def _log(msg):
+    logger.info(" " * _indent + msg)
+
 def get_logger(name="sfm"):
 
     log_dir = Path("logs")
@@ -39,9 +44,7 @@ def log_timing(func):
 
         end = time.perf_counter()
 
-        logger.info(
-            f"{func.__name__} took {end - start:.4f} seconds"
-        )
+        _log(f"{func.__name__} took {end - start:.4f} seconds")
 
         return result
 
@@ -55,9 +58,7 @@ def timed_call(name, func, *args, **kwargs):
 
     elapsed = time.perf_counter() - start
 
-    logger.info(
-        f"{name} took {elapsed:.4f} seconds"
-    )
+    _log(f"{name} took {elapsed:.4f} seconds")
 
     return result
 
@@ -70,8 +71,16 @@ def log_time(name):
 
     elapsed = time.perf_counter() - start
 
-    logger.info(
-        f"{name} took {elapsed:.4f} seconds"
-    )
+    _log(f"{name} took {elapsed:.4f} seconds")
+
+@contextmanager
+def log_indent(indents=1):
+    global _indent
+
+    _indent += indents
+    try:
+        yield
+    finally:
+        _indent -= indents
 
 logger = get_logger()
