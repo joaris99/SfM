@@ -9,6 +9,9 @@ import data_structure
 import geometry
 import open3d as o3d
 import bundle_adjustment
+import gaussian_data
+import colmap_exporter
+from tqdm import tqdm
 
 from scipy.spatial.transform import Rotation
 
@@ -21,16 +24,16 @@ K = np.array([[1660.076384971925, 0, 986.3176281647676],
               [0, 0, 1]])
 
 
-folder_name = "my"
+folder_name = "image_sets/turtle"
 recon = data_structure.Reconstruction()
 
 with log_time("load images"):
     images = []
     for i in range(36):
         if i < 9:
-            im = np.asarray(Image.open(f"images/{folder_name}/frame0{i + 1}.png"))
+            im = np.asarray(Image.open(f"{folder_name}/frame0{i + 1}.png"))
         else:
-            im = np.asarray(Image.open(f"images/{folder_name}/frame{i + 1}.png"))
+            im = np.asarray(Image.open(f"{folder_name}/frame{i + 1}.png"))
         images.append(im)
     im1 = images[0]
     im2 = images[1]
@@ -93,32 +96,33 @@ with log_time("add initial views, observations and points"):
         recon.add_observation(xy=t2, view_id=v2_id, point_id=point_id, feature_idx=idx2[i])
 
 
-
-    
-for iteration in range(34):
+for iteration in tqdm(range(34), desc="Incremental SfM"):
     logger.info(f"iteration {iteration}:")
     
     with log_time("packet info for BA"):
         camera_flat, point_flat, observations = bundle_adjustment.packet_data(recon)
 
     with log_time("bundle Adjustment"):
-        results = bundle_adjustment.bundle_adjustment(camera_flat, point_flat, observations)
+        results = bundle_adjustment.bundle_adjustment(camera_flat, point_flat, observations, verbose=False)
         camera_flat = results.cameras
         point_flat = results.points
 
     with log_time("unpack BA"):
         bundle_adjustment.unpack_results(recon, camera_flat, point_flat, observations)
+    
+    ### remove bad points ###
+
+    #########################
 
     ### re-triangulate ###
 
     ######################
+
+    # if iteration % 3 == 0:
+    #     debug.plot_3D(recon)
     
-    # debug.plot_3D(recon)
-    print(iteration)
     im_prev = images[iteration + 1]
     im_next = images[iteration + 2]
-
-    
     prev_view = recon.views[iteration + 1]
 
     with log_time("find correspondences"):
@@ -127,12 +131,11 @@ for iteration in range(34):
         pts1_norm = cv2.undistortPoints(pts1.reshape(-1, 1, 2), K, None).reshape(-1, 2)
         pts2_norm = cv2.undistortPoints(pts2.reshape(-1, 1, 2), K, None).reshape(-1, 2)
     
-    object_points = []
-    image_points = []
-    match_indices = []
-    unmatched_indices = []
-
     with log_time("find observation point matches"):
+        object_points = []
+        image_points = []
+        match_indices = []
+        unmatched_indices = []
         for i in range(len(idx1)):
             if idx1[i] in prev_view.feature_to_observation:
                 obs_id = prev_view.feature_to_observation[idx1[i]]
@@ -152,17 +155,13 @@ for iteration in range(34):
                                                         confidence=0.999, iterationsCount=1000, flags=cv2.SOLVEPNP_ITERATIVE)
         if not success:
             raise RuntimeError("PnP failed")
-        
         R, _ = cv2.Rodrigues(rvec)
         t = tvec.reshape(3)
     
     with log_time("add views and observations"):
-
         view_id = recon.add_view(R, t, kp_next, desc_next, im_next)
-
         for j in inliers.ravel():
             i = match_indices[j]      # original match index
-
             obs_id = prev_view.feature_to_observation[idx1[i]]
             point_id = recon.observations[obs_id].point_id
 
@@ -203,3 +202,7 @@ for iteration in range(34):
     
 debug.plot_3D(recon)
 print(len(recon.points))
+
+gaussian_scene = gaussian_data.GaussianScene.from_reconstruction(recon, K)
+exporter = colmap_exporter.ColmapExporter(recon, gaussian_scene, K, 2016, 1512)
+exporter.export("my")

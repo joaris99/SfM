@@ -17,5 +17,6 @@ struct BAResult {
 BAResult bundle_adjustment(
     std::vector<double> cameras,
     std::vector<double> points,
-    const std::vector<Observation>& observations
+    const std::vector<Observation>& observations,
+    bool verbose = false
 );

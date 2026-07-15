@@ -37,7 +37,8 @@ struct ReprojectionError {
 BAResult bundle_adjustment(
     std::vector<double> cameras,
     std::vector<double> points,
-    const std::vector<Observation>& observations
+    const std::vector<Observation>& observations,
+    bool verbose
 ) {
     ceres::Problem problem;
 
@@ -80,12 +81,14 @@ BAResult bundle_adjustment(
     ceres::Solver::Options options;
 
     options.linear_solver_type = ceres::SPARSE_SCHUR;
-    options.minimizer_progress_to_stdout = true;
+    options.minimizer_progress_to_stdout = verbose;
 
     ceres::Solver::Summary summary;
 
     ceres::Solve(options, &problem, &summary);
-    std::cout << summary.BriefReport() << std::endl;
+    if (verbose) {
+        std::cout << summary.BriefReport() << std::endl;
+    }
 
     BAResult result;
     result.cameras = cameras;

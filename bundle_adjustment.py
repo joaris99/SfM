@@ -62,11 +62,12 @@ def packet_data(recon):
     
     return camera_flat, point_flat, observations
 
-def bundle_adjustment(camera_flat, point_flat, observations):
+def bundle_adjustment(camera_flat, point_flat, observations, verbose=False):
     results = cpp_ba.bundle_adjustment(
         camera_flat,
         point_flat,
-        observations
+        observations, 
+        verbose
     )
     return results
 
