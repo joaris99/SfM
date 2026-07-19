@@ -17,7 +17,9 @@ class View:
 class Point3D:
     id: int
     xyz: np.ndarray
+    created_iteration: int
     observation_ids: set[int] = field(default_factory=set)
+    
 
 @dataclass
 class Observation:
@@ -86,14 +88,15 @@ class Reconstruction:
         self.views[view_id] = v
         return view_id
 
-    def add_point(self, xyz):
+    def add_point(self, xyz, iteration):
         point_id = self.next_point_id
         self.next_point_id += 1
 
         point = Point3D(
             id = point_id,
             xyz = xyz,
-            observation_ids = set()
+            created_iteration = iteration,
+            observation_ids = set(),
         )
 
         self.points[point_id] = point

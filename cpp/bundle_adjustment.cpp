@@ -98,7 +98,7 @@ BAResult bundle_adjustment(
 
         problem.AddResidualBlock(
             cost_function,
-            nullptr,
+            new ceres::HuberLoss(1.0),
             q,
             t,
             point

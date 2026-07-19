@@ -3,7 +3,7 @@ import numpy as np
 from logger import logger, log_timing
 
 def find_correspondences_akaze(im1, im2):
-    akaze = cv2.AKAZE_create(threshold=0.001)
+    akaze = cv2.AKAZE_create(threshold=0.00015)
     
     keypoints1, descriptors1 = akaze.detectAndCompute(im1, None)
     keypoints2, descriptors2 = akaze.detectAndCompute(im2, None)

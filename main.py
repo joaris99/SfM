@@ -17,7 +17,7 @@ from scipy.spatial.transform import Rotation
 
 import sys
 sys.path.append("build/Release")
-# 
+# cmake --build . --config Release
 
 # K my
 K = np.array([[1660.076384971925, 0, 986.3176281647676], 
@@ -43,18 +43,20 @@ with log_time("load images"):
         else:
             im = np.asarray(Image.open(f"{folder_name}/frame{i + 1}.png"))
         images.append(im)
-    
-    # for i in range(nr_images):
-    #     im = np.asarray(ImageOps.exif_transpose(Image.open(f"{folder_name}/frame{i}.jpg")))
-    #     undistorted = cv2.undistort(im, K, distortion_coefficients)
-    #     images.append(undistorted)
+    """
+    for i in range(nr_images):
+        im = np.asarray(ImageOps.exif_transpose(Image.open(f"{folder_name}/frame{i}.jpg")))
+        undistorted = cv2.undistort(im, K, distortion_coefficients)
+        images.append(undistorted)
+    """
     im1 = images[0]
     im2 = images[1]
 
 with log_time("find correspondences"):
     kp1, kp2, desc1, desc2, matches = correspondences.find_correspondences_akaze(im1, im2)
     pts1, pts2, idx1, idx2 = correspondences.get_coordinates(kp1, kp2, matches)
-
+# print(len(pts2))
+# debug.plot_correspondences(im1, im2, pts1, pts2)
 with log_time("five-point algorithm"):
     # 5-point algorithm + RANSAC
     E, mask_E = cv2.findEssentialMat(pts1, pts2, K,  method=cv2.RANSAC, prob=0.9999, threshold=0.5)
@@ -74,7 +76,8 @@ with log_time("recover pose"):
     pts2 = pts2[mask_pose]
     idx1 = idx1[mask_pose]
     idx2 = idx2[mask_pose]
-
+# print(len(pts2))
+# debug.plot_correspondences(im1, im2, pts1, pts2)
 with log_time("normalize points"):
     # normalize points so that triangulate optimal works
     pts1_norm = cv2.undistortPoints(pts1.reshape(-1, 1, 2), K, None).reshape(-1, 2)
@@ -94,7 +97,7 @@ with log_time("add initial views, observations and points"):
         y2 = pts2_norm[i]
 
         point = geometry.triangulate_optimal(C1, C2, y1, y2)
-        point_id = recon.add_point(point)
+        point_id = recon.add_point(point, 0)
 
         recon.add_observation(xy=p1, view_id=v1_id, point_id=point_id, feature_idx=idx1[i])
         recon.add_observation(xy=p2, view_id=v2_id, point_id=point_id, feature_idx=idx2[i])
@@ -115,6 +118,15 @@ with log_indent():
             bundle_adjustment.unpack_results(recon, camera_flat, point_flat, observations)
         
         ### remove bad points ###
+
+        # remove points with only 2 observations after 10 iterations
+        points_to_remove = []
+        for point in recon.points.values():
+            if len(point.observation_ids) == 2 and iteration - point.created_iteration > 10:
+                points_to_remove.append(point.id)
+        for i in points_to_remove:
+            recon.remove_point(i)
+        
 
         #########################
 
@@ -201,14 +213,49 @@ with log_indent():
             if err1 > threshold or err2 > threshold:
                 continue
 
-            point_id = recon.add_point(point)
+            point_id = recon.add_point(point, iteration)
 
             recon.add_observation(xy=p1, view_id=prev_view.id, point_id=point_id, feature_idx=feat_prev,)
             recon.add_observation(xy=p2, view_id=view_id, point_id=point_id, feature_idx=feat_next)
+
+points_to_remove = []
+for point in recon.points.values():
+    if len(point.observation_ids) == 2 and nr_images - point.created_iteration > 1:
+            points_to_remove.append(point.id)
+for i in points_to_remove:
+    recon.remove_point(i)
     
 debug.plot_3D(recon)
-print(len(recon.points))
+with log_time("compute reprojection error"):
+    errors = []
 
-gaussian_scene = gaussian_data.GaussianScene.from_reconstruction(recon, K)
-exporter = colmap_exporter.ColmapExporter(recon, gaussian_scene, K, 2016, 1512)
-exporter.export("my")
+    for obs in recon.observations.values():
+        point = recon.points[obs.point_id]
+        view = recon.views[obs.view_id]
+
+        C = np.concatenate((view.R, view.t.reshape(3, 1)), axis=1)
+
+        err = geometry.reprojection_error(
+            K,
+            C,
+            point.xyz,
+            obs.xy
+        )
+
+        errors.append(err)
+
+    errors = np.asarray(errors)
+    logger.info(f"Observations: {len(errors)}")
+    logger.info(f"Mean reprojection error:   {errors.mean():.3f} px")
+    logger.info(f"Median reprojection error: {np.median(errors):.3f} px")
+    logger.info(f"Std:                       {errors.std():.3f} px")
+    logger.info(f"Max:                       {errors.max():.3f} px")
+    print(f"Observations: {len(errors)}")
+    print(f"Mean reprojection error:   {errors.mean():.3f} px")
+    print(f"Median reprojection error: {np.median(errors):.3f} px")
+    print(f"Std:                       {errors.std():.3f} px")
+    print(f"Max:                       {errors.max():.3f} px")
+
+# gaussian_scene = gaussian_data.GaussianScene.from_reconstruction(recon, K)
+# exporter = colmap_exporter.ColmapExporter(recon, gaussian_scene, K, 2016, 1512)
+# exporter.export("my")
