@@ -103,7 +103,7 @@ class Reconstruction:
         obs = self.observations.pop(obs_id)
 
         self.views[obs.view_id].observation_ids.remove(obs_id)
-        del self.view[obs.view_id].feature_to_observation[obs.feature_idx]
+        del self.views[obs.view_id].feature_to_observation[obs.feature_idx]
         self.points[obs.point_id].observation_ids.remove(obs_id)
     
     def remove_view(self, view_id):
@@ -113,10 +113,12 @@ class Reconstruction:
             self.remove_observation(obs_id)
     
     def remove_point(self, point_id):
-        point = self.points.pop(point_id)
+        point = self.points[point_id]
 
         for obs_id in list(point.observation_ids):
             self.remove_observation(obs_id)
+
+        del self.points[point_id]
 
     
     

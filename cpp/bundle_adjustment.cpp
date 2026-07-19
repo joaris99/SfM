@@ -4,42 +4,78 @@
 #include <ceres/rotation.h>
 
 struct ReprojectionError {
-    ReprojectionError(double x, double y)
-        : observed_x(x), observed_y(y) {}
+
+    ReprojectionError(
+        double x,
+        double y,
+        const std::vector<double>& K
+    )
+        :
+        observed_x(x),
+        observed_y(y),
+        fx(K[0]),
+        fy(K[4]),
+        cx(K[2]),
+        cy(K[5])
+    {}
 
     template <typename T>
-    bool operator()(const T* const q,
-                    const T* const t,
-                    const T* const point,
-                    T* residuals) const {
+    bool operator()(
+        const T* const q,
+        const T* const t,
+        const T* const point,
+        T* residuals
+    ) const {
 
+        // Rotate point from world coordinates to camera coordinates
         T p[3];
 
-        ceres::QuaternionRotatePoint(q, point, p);
+        ceres::QuaternionRotatePoint(
+            q,
+            point,
+            p
+        );
 
+        // Apply translation
         p[0] += t[0];
         p[1] += t[1];
         p[2] += t[2];
 
-        T xp = p[0] / p[2];
-        T yp = p[1] / p[2];
 
-        residuals[0] = xp - T(observed_x);
-        residuals[1] = yp - T(observed_y);
+        // Normalize camera coordinates
+        T x_normalized = p[0] / p[2];
+        T y_normalized = p[1] / p[2];
+
+
+        // Project to pixel coordinates using K
+        T u = T(fx) * x_normalized + T(cx);
+        T v = T(fy) * y_normalized + T(cy);
+
+
+        // Pixel reprojection error
+        residuals[0] = u - T(observed_x);
+        residuals[1] = v - T(observed_y);
 
         return true;
     }
 
+
     double observed_x;
     double observed_y;
+
+    double fx;
+    double fy;
+    double cx;
+    double cy;
 };
 
 BAResult bundle_adjustment(
     std::vector<double> cameras,
     std::vector<double> points,
     const std::vector<Observation>& observations,
+    const std::vector<double>& K,
     bool verbose
-) {
+){
     ceres::Problem problem;
 
     for (const auto& obs : observations) {
@@ -58,7 +94,7 @@ BAResult bundle_adjustment(
                 4,
                 3,
                 3>(
-                new ReprojectionError(obs.x, obs.y));
+                new ReprojectionError(obs.x, obs.y, K));
 
         problem.AddResidualBlock(
             cost_function,

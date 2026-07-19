@@ -30,8 +30,7 @@ class GaussianScene:
 
             color = cls.get_color(
                 reconstruction,
-                point,
-                K
+                point
             )
 
 
@@ -58,26 +57,12 @@ class GaussianScene:
         return scene
     
     @staticmethod
-    def normalized_to_pixel(xy, K):
-
-        fx = K[0,0]
-        fy = K[1,1]
-        cx = K[0,2]
-        cy = K[1,2]
-
-        u = fx * xy[0] + cx
-        v = fy * xy[1] + cy
-
-        return np.array([u,v])
-    
-    @staticmethod
     def get_color(
         reconstruction,
-        point,
-        K
+        point
     ):
 
-        colors=[]
+        colors = []
 
         for obs_id in point.observation_ids:
 
@@ -85,14 +70,7 @@ class GaussianScene:
 
             view = reconstruction.views[obs.view_id]
 
-
-            uv = GaussianScene.normalized_to_pixel(
-                obs.xy,
-                K
-            )
-
-            u,v = uv.astype(int)
-
+            u, v = obs.xy.astype(int)
 
             if (
                 0 <= u < view.image.shape[1]
@@ -101,11 +79,10 @@ class GaussianScene:
             ):
 
                 colors.append(
-                    view.image[v,u]/255.0
+                    view.image[v, u] / 255.0
                 )
 
-
-        if len(colors)>0:
+        if len(colors) > 0:
             return np.mean(colors, axis=0)
 
         return np.array([1,1,1])

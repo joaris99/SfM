@@ -1,17 +1,47 @@
 import numpy as np
 
-def reprojection_error(P, X, x):
+def reprojection_error(K, C, X, x):
     """
-    P : (3,4) camera matrix
-    X : (3,) or (4,) 3D point in world coordinates
-    x : (2,) normalized image point
+    Compute the pixel reprojection error of a 3D point.
 
-    Returns the Euclidean reprojection error in normalized coordinates.
+    Parameters
+    ----------
+    K : np.ndarray, shape (3, 3)
+        Camera intrinsic matrix:
+            [[fx,  0, cx],
+             [ 0, fy, cy],
+             [ 0,  0,  1]]
+        Converts camera coordinates into pixel coordinates.
+
+    R : np.ndarray, shape (3, 3)
+        Camera rotation matrix.
+        Transforms points from world coordinates to camera coordinates.
+
+    t : np.ndarray, shape (3,) or (3, 1)
+        Camera translation vector.
+        Together with R, defines the camera extrinsic parameters:
+        X_camera = R * X_world + t
+
+    X : np.ndarray, shape (3,)
+        3D point in world coordinates.
+
+    x : np.ndarray, shape (2,)
+        Observed 2D image point in pixel coordinates:
+        [u, v]
+
+    Returns
+    -------
+    float
+        Euclidean reprojection error in pixels.
+        This is the distance between the observed pixel location
+        and the projected pixel location of the 3D point.
     """
-    if X.shape[0] == 3:
-        X = np.append(X, 1.0)
 
-    x_proj = P @ X
+    X_h = np.append(X, 1)
+
+    P = K @ C
+
+    x_proj = P @ X_h
     x_proj = x_proj[:2] / x_proj[2]
 
     return np.linalg.norm(x_proj - x)

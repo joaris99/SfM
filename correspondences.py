@@ -3,7 +3,7 @@ import numpy as np
 from logger import logger, log_timing
 
 def find_correspondences_akaze(im1, im2):
-    akaze = cv2.AKAZE_create(threshold=0.0001)
+    akaze = cv2.AKAZE_create(threshold=0.001)
     
     keypoints1, descriptors1 = akaze.detectAndCompute(im1, None)
     keypoints2, descriptors2 = akaze.detectAndCompute(im2, None)
@@ -15,7 +15,6 @@ def find_correspondences_akaze(im1, im2):
 
     # keypoints1, descriptors1 = sift.detectAndCompute(im1, None)
     # keypoints2, descriptors2 = sift.detectAndCompute(im2, None)
-
     # bf = cv2.BFMatcher(cv2.NORM_L2)
 
     # KNN matching for Lowe ratio test
@@ -24,13 +23,13 @@ def find_correspondences_akaze(im1, im2):
 
     good12 = {}
     for m, n in matches12:
-        if m.distance < 0.75 * n.distance:
+        if m.distance < 0.95 * n.distance:
             # queryIdx -> trainIdx
             good12[(m.queryIdx, m.trainIdx)] = m
 
     good21 = {}
     for m, n in matches21:
-        if m.distance < 0.75 * n.distance:
+        if m.distance < 0.95 * n.distance:
             # queryIdx=image2, trainIdx=image1
             good21[(m.queryIdx, m.trainIdx)] = m
 
