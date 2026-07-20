@@ -1,5 +1,27 @@
 import numpy as np
 
+def triangulation_angle(point, R1, t1, R2, t2):
+    """
+    Returns the angle (degrees) between the rays from the two camera centers
+    to the reconstructed point.
+    """
+    point = np.asarray(point).reshape(3)
+    t1 = np.asarray(t1).reshape(3)
+    t2 = np.asarray(t2).reshape(3)
+
+    C1 = -R1.T @ t1
+    C2 = -R2.T @ t2
+
+    v1 = point - C1
+    v2 = point - C2
+
+    v1 /= np.linalg.norm(v1)
+    v2 /= np.linalg.norm(v2)
+
+    cos_angle = np.clip(np.dot(v1, v2), -1.0, 1.0)
+
+    return np.degrees(np.arccos(cos_angle))
+
 def reprojection_error(K, C, X, x):
     """
     Compute the pixel reprojection error of a 3D point.
