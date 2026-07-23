@@ -1,28 +1,51 @@
-from logger import log_time
-from PIL import Image
+from logger import log_time, logger
+from PIL import Image, ImageOps
 import correspondences
 import cv2
 import numpy as np
 import geometry
+import bundle_adjustment
+from pathlib import Path
 
-def setup(recon, data_path, K):  
+def load_data(data_path):
     with log_time("load images"):
+
+        folder = Path(data_path)
+        num_images = len(list(folder.glob("frame*.jpg")))
+
+        with open(f"{data_path}/camera.txt", "r") as f:
+            lines = [
+                line.strip()
+                for line in f
+                if line.strip() and not line.startswith("#")
+            ]
+
+        K = np.array([list(map(float, lines[i].split())) for i in range(3)])
+        distortion_coefficients = np.array(list(map(float, lines[3].split())))
+
         images = []
-        
-        for i in range(36):
+        """
+        for i in range(num_images):
             if i < 9:
                 im = np.asarray(Image.open(f"{data_path}/frame0{i + 1}.png"))
             else:
                 im = np.asarray(Image.open(f"{data_path}/frame{i + 1}.png"))
             images.append(im)
         """
-        for i in range(nr_images):
-            im = np.asarray(ImageOps.exif_transpose(Image.open(f"{folder_name}/frame{i}.jpg")))
+        for i in range(num_images):
+            im = np.asarray(ImageOps.exif_transpose(Image.open(f"{data_path}/frame{i}.jpg")))
             undistorted = cv2.undistort(im, K, distortion_coefficients)
             images.append(undistorted)
-        """
-        im1 = images[0]
-        im2 = images[1]
+        
+
+        
+    return images, K, distortion_coefficients
+
+
+def setup(recon, im1, im2, K): 
+    """
+    initiates SfM with the first 2 views
+    """ 
 
     with log_time("find correspondences"):
         kp1, kp2, desc1, desc2, matches = correspondences.find_correspondences_akaze(im1, im2)
@@ -66,12 +89,9 @@ def setup(recon, data_path, K):
 
             recon.add_observation(xy=pts1[i], view_id=v1_id, point_id=point_id, feature_idx=idx1[i])
             recon.add_observation(xy=pts2[i], view_id=v2_id, point_id=point_id, feature_idx=idx2[i])
-    
-    return images
 
 def two_view_recon(recon, prev_view, im_prev, im_next, K, iteration):
 
-    
     with log_time("find correspondences"):
         kp_prev, kp_next, desc_prev, desc_next, matches = correspondences.find_correspondences_akaze(im_prev, im_next)
         pts1, pts2, idx1, idx2 = correspondences.get_coordinates(kp_prev, kp_next, matches)
@@ -148,3 +168,80 @@ def two_view_recon(recon, prev_view, im_prev, im_next, K, iteration):
         feat_next = idx2[i]
         recon.add_observation(xy=pts1[i], view_id=prev_view.id, point_id=point_id, feature_idx=feat_prev,)
         recon.add_observation(xy=pts2[i], view_id=view_id, point_id=point_id, feature_idx=feat_next)
+
+def ba(recon, iteration):
+    with log_time("packet info for BA"):
+        camera_flat, point_flat, observations = bundle_adjustment.packet_data(recon)
+
+        with log_time("bundle Adjustment"):
+            results = bundle_adjustment.bundle_adjustment(camera_flat, point_flat, observations, K, verbose=False)
+            camera_flat = results.cameras
+            point_flat = results.points
+
+        with log_time("unpack BA"):
+            bundle_adjustment.unpack_results(recon, camera_flat, point_flat, observations)
+        
+        ### remove bad points ###
+
+        # remove points with only 2 observations after 10 iterations
+        with log_time("remove old points with 2 observations"):
+            points_to_remove = []
+            for point in recon.points.values():
+                if len(point.observation_ids) == 2 and iteration - point.created_iteration > 10:
+                    points_to_remove.append(point.id)
+            for i in points_to_remove:
+                recon.remove_point(i)
+        
+
+        #########################
+
+        ### re-triangulate ###
+
+        ######################
+        
+        # if iteration % 3 == 0:
+        #    debug.plot_3D(recon)
+
+
+def finalize_recon(recon, num_images):
+    with log_time("remove points with 2 observations"):
+        points_to_remove = []
+        for point in recon.points.values():
+            if len(point.observation_ids) == 2 and num_images - point.created_iteration > 1:
+                    points_to_remove.append(point.id)
+        for i in points_to_remove:
+            recon.remove_point(i)
+
+def compute_error(recon, K, verbose = False):
+    with log_time("compute reprojection error"):
+        errors = []
+
+        for obs in recon.observations.values():
+            point = recon.points[obs.point_id]
+            view = recon.views[obs.view_id]
+
+            C = np.concatenate((view.R, view.t.reshape(3, 1)), axis=1)
+
+            err = geometry.reprojection_error(
+                K,
+                C,
+                point.xyz,
+                obs.xy
+            )
+
+            errors.append(err)
+
+        errors = np.asarray(errors)
+        logger.info(f"Observations:              {len(errors):.3f}")
+        logger.info(f"Points:                    {len(recon.points):.3f}")
+        logger.info(f"Mean reprojection error:   {errors.mean():.3f} px")
+        logger.info(f"Median reprojection error: {np.median(errors):.3f} px")
+        logger.info(f"Std:                       {errors.std():.3f} px")
+        logger.info(f"Max:                       {errors.max():.3f} px")
+        if verbose:
+            print(f"Observations:              {len(errors):.3f}")
+            print(f"Points:                    {len(recon.points):.3f}")
+            print(f"Mean reprojection error:   {errors.mean():.3f} px")
+            print(f"Median reprojection error: {np.median(errors):.3f} px")
+            print(f"Std:                       {errors.std():.3f} px")
+            print(f"Max:                       {errors.max():.3f} px")
