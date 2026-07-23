@@ -30,6 +30,7 @@ sfm.setup(recon, images[0], images[1], K)
 with log_indent():
     for iteration in tqdm(range(num_images - 2), desc="Incremental SfM"):
         logger.info(f"iteration {iteration}:")
+        sfm.ba(recon, K, iteration)
 
         prev_view = recon.views[iteration + 1]
         im_prev = images[iteration + 1]

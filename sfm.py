@@ -169,7 +169,7 @@ def two_view_recon(recon, prev_view, im_prev, im_next, K, iteration):
         recon.add_observation(xy=pts1[i], view_id=prev_view.id, point_id=point_id, feature_idx=feat_prev,)
         recon.add_observation(xy=pts2[i], view_id=view_id, point_id=point_id, feature_idx=feat_next)
 
-def ba(recon, iteration):
+def ba(recon, K, iteration):
     with log_time("packet info for BA"):
         camera_flat, point_flat, observations = bundle_adjustment.packet_data(recon)
 
