@@ -2,25 +2,27 @@ import cv2
 import numpy as np
 from logger import logger, log_timing, log_indent, log_time
 
-def find_correspondences_akaze(im1, im2):
-        # akaze = cv2.AKAZE_create(threshold=0.001)
-        
-        # keypoints1, descriptors1 = akaze.detectAndCompute(im1, None)
-        # keypoints2, descriptors2 = akaze.detectAndCompute(im2, None)
+def find_keypoints(im):
 
+    # akaze = cv2.AKAZE_create(threshold=0.001) 
+    # keypoints1, descriptors1 = akaze.detectAndCompute(im1, None)
+
+    sift = cv2.SIFT_create()
+    keypoints, descriptors = sift.detectAndCompute(im, None)
+    return keypoints, descriptors
+            
+
+
+def find_correspondences(desc1, desc2):
+        # Akaze
         # bf = cv2.BFMatcher(cv2.NORM_HAMMING)
-
-        sift = cv2.SIFT_create()
-
-        keypoints1, descriptors1 = sift.detectAndCompute(im1, None)
-        keypoints2, descriptors2 = sift.detectAndCompute(im2, None)
-        print(len(keypoints1))
+        # Sift
         bf = cv2.BFMatcher(cv2.NORM_L2)
-
+            
         # KNN matching for Lowe ratio test
-        matches12 = bf.knnMatch(descriptors1, descriptors2, k=2)
-        matches21 = bf.knnMatch(descriptors2, descriptors1, k=2)
-
+        matches12 = bf.knnMatch(desc1, desc2, k=2)
+        matches21 = bf.knnMatch(desc2, desc1, k=2)
+        
         good12 = {}
         for m, n in matches12:
             if m.distance < 0.95 * n.distance:
@@ -33,8 +35,6 @@ def find_correspondences_akaze(im1, im2):
                 # queryIdx=image2, trainIdx=image1
                 good21[(m.queryIdx, m.trainIdx)] = m
 
-        
-
         # Keep only good matches
         good_matches = []
 
@@ -44,12 +44,11 @@ def find_correspondences_akaze(im1, im2):
 
         good_matches.sort(key=lambda m: m.distance)
         
-
         # Optional: sort by descriptor distance
         good_matches = sorted(good_matches, key=lambda x: x.distance)
         good_matches = np.array(good_matches, dtype=object)
 
-        return keypoints1, keypoints2, descriptors1, descriptors2, good_matches
+        return good_matches
 
 def get_coordinates(kps1, kps2, matches):
     pts1, pts2, idx1, idx2 = [], [], [], []

@@ -4,6 +4,7 @@ from logger import logger, log_time, log_indent
 import data_structure
 from tqdm import tqdm
 import sfm
+import correspondences
 
 from scipy.spatial.transform import Rotation
 
@@ -18,13 +19,23 @@ angle_threshold = 0.5
 
 images, K, distortion = sfm.load_data(data_path)
 num_images = len(images)
-sfm.setup(recon, images[0], images[1], K, angle_threshold=angle_threshold)
+keypoints = []
+descriptors = []
 
-# debug.plot_3D(recon)
+with log_time("compute keypoint/descriptor pairs"):
+    for im in images:
+        kp, desc = correspondences.find_keypoints(im)
+        keypoints.append(kp)
+        descriptors.append(desc)
+
+sfm.setup(recon, K, images[0], images[1], keypoints[0], keypoints[1], descriptors[0], descriptors[1], angle_threshold=angle_threshold)
+
+debug.plot_3D(recon)
 
 with log_indent():
     for iteration in tqdm(range(num_images - 2), desc="Incremental SfM"):
         logger.info(f"iteration {iteration}:")
+        current_idx = iteration + 2
 
         if iteration % 10 == 0:
             sfm.ba(recon, K, iteration)
@@ -37,13 +48,13 @@ with log_indent():
         matches = []
 
         with log_time("select candidate views"):
-            im_next = images[iteration + 2]
-            candidate_views = sfm.select_candidate_views(iteration)
+            im_next = images[current_idx]
+            candidate_views = sfm.select_candidate_views(current_idx)
         
         with log_indent(), log_time("find observation/point matches for pnp"):
             for prev_idx in candidate_views:
                 prev_view = recon.views[prev_idx]
-                result  = sfm.find_correspondences(recon, prev_view, im_next)
+                result  = sfm.find_correspondences(recon, prev_view, im_next, keypoints[prev_idx], keypoints[current_idx], descriptors[prev_idx], descriptors[current_idx])
                 object_points = np.vstack((object_points, result["object_points"]))
                 image_points = np.vstack((image_points, result["image_points"]))
 

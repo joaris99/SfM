@@ -43,13 +43,13 @@ def load_data(data_path):
     return images, K, distortion_coefficients
 
 
-def setup(recon, im1, im2, K, angle_threshold = 0.5): 
+def setup(recon, K, im1, im2, kp1, kp2, desc1, desc2, angle_threshold = 0.5): 
     """
     initiates SfM with the first 2 views
     """ 
 
     with log_time("find correspondences"):
-        kp1, kp2, desc1, desc2, matches = correspondences.find_correspondences_akaze(im1, im2)
+        matches = correspondences.find_correspondences(desc1, desc2)
         pts1, pts2, idx1, idx2 = correspondences.get_coordinates(kp1, kp2, matches)
     # print(len(pts2))
     # debug.plot_correspondences(im1, im2, pts1, pts2)
@@ -92,8 +92,7 @@ def setup(recon, im1, im2, K, angle_threshold = 0.5):
             recon.add_observation(xy=pts2[i], view_id=v2_id, point_id=point_id, feature_idx=idx2[i])
 
 
-def select_candidate_views(iteration):
-    current_idx = iteration + 2
+def select_candidate_views(current_idx):
 
     candidate_views = []
     # Last 5 views
@@ -117,11 +116,11 @@ def select_candidate_views(iteration):
 
     return candidate_views
 
-def find_correspondences(recon, prev_view, im_next):
+def find_correspondences(recon, prev_view, im_next, kp_prev, kp_next, desc_prev, desc_next):
     im_prev = prev_view.image
 
-    with log_time("find correspondences"):
-        kp_prev, kp_next, desc_prev, desc_next, matches = correspondences.find_correspondences_akaze(im_prev, im_next)
+    with log_time("match correspondences"):
+        matches = correspondences.find_correspondences(desc_prev, desc_next)
         pts1, pts2, idx1, idx2 = correspondences.get_coordinates(kp_prev, kp_next, matches)
         
         
@@ -255,13 +254,13 @@ def ba(recon, K, iteration):
     ### remove bad points ###
 
     # remove points with only 2 observations after 10 iterations
-    with log_time("remove old points with 2 observations"):
-        points_to_remove = []
-        for point in recon.points.values():
-            if len(point.observation_ids) == 2 and iteration - point.created_iteration > 10:
-                points_to_remove.append(point.id)
-        for i in points_to_remove:
-            recon.remove_point(i)
+    # with log_time("remove old points with 2 observations"):
+    #     points_to_remove = []
+    #     for point in recon.points.values():
+    #         if len(point.observation_ids) == 2 and iteration - point.created_iteration > 10:
+    #             points_to_remove.append(point.id)
+    #     for i in points_to_remove:
+    #         recon.remove_point(i)
 
     #########################
 
