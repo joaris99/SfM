@@ -67,10 +67,10 @@ def setup(recon, im1, im2, K, angle_threshold = 0.5):
         matches, pts1, pts2, idx1, idx2 = matches[mask_pose], pts1[mask_pose], pts2[mask_pose], idx1[mask_pose], idx2[mask_pose]
     # print(len(pts2))
     # debug.plot_correspondences(im1, im2, pts1, pts2)
-    with log_time("normalize points"):
-        # normalize points so that triangulate optimal works
-        pts1_norm = cv2.undistortPoints(pts1.reshape(-1, 1, 2), K, None).reshape(-1, 2)
-        pts2_norm = cv2.undistortPoints(pts2.reshape(-1, 1, 2), K, None).reshape(-1, 2)
+
+    # normalize points so that triangulate optimal works
+    pts1_norm = cv2.undistortPoints(pts1.reshape(-1, 1, 2), K, None).reshape(-1, 2)
+    pts2_norm = cv2.undistortPoints(pts2.reshape(-1, 1, 2), K, None).reshape(-1, 2)
 
     with log_time("add initial views, observations and points"):
         C1 = np.concat((np.identity(3), np.array([0, 0, 0]).reshape(3, 1)), axis = 1)
@@ -200,12 +200,11 @@ def triangulate_new_points(recon, K, prev_view, view_id, unmatched_indices, pts1
 
     C_prev = np.concat((prev_view.R, prev_view.t.reshape(3,1)), axis = 1)
     C_next = np.concat((recon.views[view_id].R, recon.views[view_id].t.reshape(3,1)), axis = 1)
-    with log_time("normalize points"):
-        pts1_norm = cv2.undistortPoints(pts1.reshape(-1, 1, 2), K, None).reshape(-1, 2)
-        pts2_norm = cv2.undistortPoints(pts2.reshape(-1, 1, 2), K, None).reshape(-1, 2)
+    pts1_norm = cv2.undistortPoints(pts1.reshape(-1, 1, 2), K, None).reshape(-1, 2)
+    pts2_norm = cv2.undistortPoints(pts2.reshape(-1, 1, 2), K, None).reshape(-1, 2)
     
     for i in unmatched_indices:
-
+        
         # make sure point is not already added
         next_view = recon.views[view_id]
         if idx2[i] in next_view.feature_to_observation:
@@ -245,34 +244,30 @@ def ba(recon, K, iteration):
     with log_time("packet info for BA"):
         camera_flat, point_flat, observations = bundle_adjustment.packet_data(recon)
 
-        with log_time("bundle Adjustment"):
-            results = bundle_adjustment.bundle_adjustment(camera_flat, point_flat, observations, K, verbose=False)
-            camera_flat = results.cameras
-            point_flat = results.points
+    with log_time("bundle Adjustment"):
+        results = bundle_adjustment.bundle_adjustment(camera_flat, point_flat, observations, K, verbose=False)
+        camera_flat = results.cameras
+        point_flat = results.points
 
-        with log_time("unpack BA"):
-            bundle_adjustment.unpack_results(recon, camera_flat, point_flat, observations)
-        
-        ### remove bad points ###
+    with log_time("unpack BA"):
+        bundle_adjustment.unpack_results(recon, camera_flat, point_flat, observations)
+    
+    ### remove bad points ###
 
-        # remove points with only 2 observations after 10 iterations
-        with log_time("remove old points with 2 observations"):
-            points_to_remove = []
-            for point in recon.points.values():
-                if len(point.observation_ids) == 2 and iteration - point.created_iteration > 10:
-                    points_to_remove.append(point.id)
-            for i in points_to_remove:
-                recon.remove_point(i)
-        
+    # remove points with only 2 observations after 10 iterations
+    with log_time("remove old points with 2 observations"):
+        points_to_remove = []
+        for point in recon.points.values():
+            if len(point.observation_ids) == 2 and iteration - point.created_iteration > 10:
+                points_to_remove.append(point.id)
+        for i in points_to_remove:
+            recon.remove_point(i)
 
-        #########################
+    #########################
 
-        ### re-triangulate ###
+    ### re-triangulate ###
 
-        ######################
-        
-        # if iteration % 3 == 0:
-        #    debug.plot_3D(recon)
+    ######################
 
 
 def finalize_recon(recon, num_images):
