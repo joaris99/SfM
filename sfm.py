@@ -119,29 +119,29 @@ def select_candidate_views(current_idx):
 def find_correspondences(recon, prev_view, kp_prev, kp_next, desc_prev, desc_next):
     im_prev = prev_view.image
 
-    with log_time("match correspondences"):
-        matches = correspondences.find_correspondences(desc_prev, desc_next)
-        pts1, pts2, idx1, idx2 = correspondences.get_coordinates(kp_prev, kp_next, matches)
-        
-        
-    with log_time("find observation point matches"):
-        object_points = []
-        image_points = []
-        match_indices = []
-        unmatched_indices = []
-        for i in range(len(idx1)):
-            if idx1[i] in prev_view.feature_to_observation:
-                obs_id = prev_view.feature_to_observation[idx1[i]]
-                point_id = recon.observations[obs_id].point_id
-
-                object_points.append(recon.points[point_id].xyz)
-                image_points.append(pts2[i])
-                match_indices.append(i)
-            else:
-                unmatched_indices.append(i)
+    # with log_time("match correspondences"):
+    matches = correspondences.find_correspondences(desc_prev, desc_next)
+    pts1, pts2, idx1, idx2 = correspondences.get_coordinates(kp_prev, kp_next, matches)
     
-        object_points = np.asarray(object_points, dtype=np.float32)
-        image_points = np.asarray(image_points, dtype=np.float32)
+        
+    # with log_time("find observation point matches"):
+    object_points = []
+    image_points = []
+    match_indices = []
+    unmatched_indices = []
+    for i in range(len(idx1)):
+        if idx1[i] in prev_view.feature_to_observation:
+            obs_id = prev_view.feature_to_observation[idx1[i]]
+            point_id = recon.observations[obs_id].point_id
+
+            object_points.append(recon.points[point_id].xyz)
+            image_points.append(pts2[i])
+            match_indices.append(i)
+        else:
+            unmatched_indices.append(i)
+
+    object_points = np.asarray(object_points, dtype=np.float32)
+    image_points = np.asarray(image_points, dtype=np.float32)
     
     return {
         "kp_next": kp_next,

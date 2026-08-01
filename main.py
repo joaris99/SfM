@@ -32,9 +32,9 @@ sfm.setup(recon, K, images[0], images[1], keypoints[0], keypoints[1], descriptor
 
 # debug.plot_3D(recon)
 
-with log_indent():
-    for iteration in tqdm(range(num_images - 2), desc="Incremental SfM"):
-        logger.info(f"iteration {iteration}:")
+
+for iteration in tqdm(range(num_images - 2), desc="Incremental SfM"):
+    with log_time(f"iteration {iteration} took"), log_indent():
         current_idx = iteration + 2
 
         if iteration % 1 == 0:
@@ -43,7 +43,7 @@ with log_indent():
 
         sfm.remove_few_obs_points(recon, iteration) 
 
-               
+            
         # debug.plot_3D(recon)
 
         object_points = np.empty((0,3))
@@ -55,7 +55,7 @@ with log_indent():
             im_next = images[current_idx]
             candidate_views = sfm.select_candidate_views(current_idx)
         
-        with log_indent(), log_time("find observation/point matches for pnp"):
+        with log_time("find observation/point matches for pnp"):
             for prev_idx in candidate_views:
                 prev_view = recon.views[prev_idx]
                 result  = sfm.find_correspondences(recon, prev_view, keypoints[prev_idx], keypoints[current_idx], descriptors[prev_idx], descriptors[current_idx])
