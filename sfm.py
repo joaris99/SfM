@@ -116,7 +116,7 @@ def select_candidate_views(current_idx):
 
     return candidate_views
 
-def find_correspondences(recon, prev_view, im_next, kp_prev, kp_next, desc_prev, desc_next):
+def find_correspondences(recon, prev_view, kp_prev, kp_next, desc_prev, desc_next):
     im_prev = prev_view.image
 
     with log_time("match correspondences"):
@@ -239,7 +239,7 @@ def triangulate_new_points(recon, K, prev_view, view_id, unmatched_indices, pts1
         recon.add_observation(xy=pts2[i], view_id=view_id, point_id=point_id, feature_idx=feat_next)
 
 
-def ba(recon, K, iteration):
+def ba(recon, K):
     with log_time("packet info for BA"):
         camera_flat, point_flat, observations = bundle_adjustment.packet_data(recon)
 
@@ -250,17 +250,7 @@ def ba(recon, K, iteration):
 
     with log_time("unpack BA"):
         bundle_adjustment.unpack_results(recon, camera_flat, point_flat, observations)
-    
-    ### remove bad points ###
 
-    # remove points with only 2 observations after 10 iterations
-    # with log_time("remove old points with 2 observations"):
-    #     points_to_remove = []
-    #     for point in recon.points.values():
-    #         if len(point.observation_ids) == 2 and iteration - point.created_iteration > 10:
-    #             points_to_remove.append(point.id)
-    #     for i in points_to_remove:
-    #         recon.remove_point(i)
 
     #########################
 
@@ -268,8 +258,53 @@ def ba(recon, K, iteration):
 
     ######################
 
+def remove_few_obs_points(recon, iteration):
 
-def finalize_recon(recon, num_images):
+    # remove points with only 2 observations after 10 iterations
+    with log_time("remove old points with 2 observations"):
+        points_to_remove = []
+        for point in recon.points.values():
+            if len(point.observation_ids) == 2 and iteration - point.created_iteration > 10:
+                points_to_remove.append(point.id)
+
+        for i in points_to_remove:
+            recon.remove_point(i)
+
+    
+
+def remove_high_reprj_err_points(recon, K, threshold = 5):
+    # remove points depending on reprojection error
+        with log_time("remove points based on reprojection error"):
+            points_to_remove = []
+            observations_to_remove = []
+            for point in recon.points.values():
+                errors = []
+                obs_ids = []
+                for observation_id in point.observation_ids:
+                    view_id = recon.observations[observation_id].view_id
+                    R = recon.views[view_id].R
+                    t = recon.views[view_id].t
+                    C = np.concat((R, t.reshape(3,1)), axis = 1)
+                    error = geometry.reprojection_error(K, C, point.xyz, recon.observations[observation_id].xy)
+                    errors.append(error)
+                    obs_ids.append(observation_id)
+                if np.median(errors) > threshold:
+                    points_to_remove.append(point.id)
+                else:
+                    for error, obs_id in zip(errors, obs_ids):
+                        if error > threshold:
+                            observations_to_remove.append(obs_id)
+            for i in points_to_remove:
+                recon.remove_point(i)
+            for i in observations_to_remove:
+                recon.remove_observation(i)
+            recon.cleanup_points()
+
+
+
+def finalize_recon(recon, K, num_images, threshold = 5):
+    ba(recon, K)
+    remove_high_reprj_err_points(recon, K, threshold=threshold)
     with log_time("remove points with 2 observations"):
         points_to_remove = []
         for point in recon.points.values():

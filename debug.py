@@ -116,77 +116,98 @@ def plot_correspondences(
 
     return canvas
 
-def create_camera_frustum(R, t, scale=0.5, color=[1, 0, 0]):
+def create_camera_frustum(R, t, scale=0.05, color=[1, 0, 0]):
     """
     Create camera frustum as Open3D LineSet.
 
-    R : 3x3 rotation matrix
-    t : 3-vector translation
+    R : (3,3) rotation matrix (world -> camera)
+    t : (3,) translation vector
     """
 
     # Camera center in world coordinates
     C = -R.T @ t
 
-    # Frustum points in camera coordinates
+    # Frustum in camera coordinates
     points_cam = np.array([
-        [0, 0, 0],           # camera center
+        [0, 0, 0],
         [-1, -1, 2],
         [ 1, -1, 2],
         [ 1,  1, 2],
         [-1,  1, 2]
     ]) * scale
 
-    # Transform into world coordinates
+    # Transform to world coordinates
     points_world = (R.T @ points_cam.T).T + C.reshape(1, 3)
 
     lines = [
-        [0, 1],
-        [0, 2],
-        [0, 3],
-        [0, 4],
-        [1, 2],
-        [2, 3],
-        [3, 4],
-        [4, 1]
+        [0, 1], [0, 2], [0, 3], [0, 4],
+        [1, 2], [2, 3], [3, 4], [4, 1]
     ]
 
-    colors = [color for _ in lines]
-
     line_set = o3d.geometry.LineSet()
-
     line_set.points = o3d.utility.Vector3dVector(points_world)
     line_set.lines = o3d.utility.Vector2iVector(lines)
-    line_set.colors = o3d.utility.Vector3dVector(colors)
+    line_set.colors = o3d.utility.Vector3dVector([color] * len(lines))
 
     return line_set
 
+
 def plot_3D(recon):
-    points = []
-    for p in recon.points:
-        points.append(recon.points[p].xyz)
+    # -------------------------------
+    # Collect points
+    # -------------------------------
+    points = np.array([recon.points[p].xyz for p in recon.points])
 
-    R, t = [], []
-    for v in recon.views:
-        R.append(recon.views[v].R)
-        t.append(recon.views[v].t)
+    if len(points) == 0:
+        print("No points to display.")
+        return
 
+    # -------------------------------
+    # Normalize scene for visualization
+    # -------------------------------
+    center = points.mean(axis=0)
 
+    radius = np.linalg.norm(points - center, axis=1).max()
+    radius = max(radius, 1e-8)
 
+    vis_scale = 1.0 / radius
+
+    points_vis = (points - center) * vis_scale
+
+    # -------------------------------
+    # Point cloud
+    # -------------------------------
     pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points)
+    pcd.points = o3d.utility.Vector3dVector(points_vis)
 
     geometries = [pcd]
 
-    for r, tvec in zip(R, t):
+    # Camera frustum size relative to normalized scene
+    frustum_scale = 0.05
+
+    # -------------------------------
+    # Cameras
+    # -------------------------------
+    for view in recon.views.values():
+
+        R = view.R
+        t = view.t
+
+        # Camera center
+        C = -R.T @ t
+
+        # Normalize camera center
+        C_vis = (C - center) * vis_scale
+
+        # Convert back to t for plotting
+        t_vis = -R @ C_vis
 
         cam = create_camera_frustum(
-            r,
-            tvec,
-            scale=1.0
+            R,
+            t_vis,
+            scale=frustum_scale
         )
 
         geometries.append(cam)
 
     o3d.visualization.draw_geometries(geometries)
-
-

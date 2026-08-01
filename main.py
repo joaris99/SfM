@@ -30,16 +30,20 @@ with log_time("compute keypoint/descriptor pairs"):
 
 sfm.setup(recon, K, images[0], images[1], keypoints[0], keypoints[1], descriptors[0], descriptors[1], angle_threshold=angle_threshold)
 
-debug.plot_3D(recon)
+# debug.plot_3D(recon)
 
 with log_indent():
     for iteration in tqdm(range(num_images - 2), desc="Incremental SfM"):
         logger.info(f"iteration {iteration}:")
         current_idx = iteration + 2
 
-        if iteration % 10 == 0:
-            sfm.ba(recon, K, iteration)
-        
+        if iteration % 1 == 0:
+            sfm.ba(recon, K)
+            sfm.remove_high_reprj_err_points(recon, K, threshold=threshold)
+
+        sfm.remove_few_obs_points(recon, iteration) 
+
+               
         # debug.plot_3D(recon)
 
         object_points = np.empty((0,3))
@@ -54,7 +58,7 @@ with log_indent():
         with log_indent(), log_time("find observation/point matches for pnp"):
             for prev_idx in candidate_views:
                 prev_view = recon.views[prev_idx]
-                result  = sfm.find_correspondences(recon, prev_view, im_next, keypoints[prev_idx], keypoints[current_idx], descriptors[prev_idx], descriptors[current_idx])
+                result  = sfm.find_correspondences(recon, prev_view, keypoints[prev_idx], keypoints[current_idx], descriptors[prev_idx], descriptors[current_idx])
                 object_points = np.vstack((object_points, result["object_points"]))
                 image_points = np.vstack((image_points, result["image_points"]))
 
@@ -82,7 +86,7 @@ with log_indent():
                                         result["pts1"], result["pts2"], result["idx1"], result["idx2"], 
                                         iteration, threshold=threshold,  angle_threshold=angle_threshold)
 
-sfm.finalize_recon(recon, num_images)
+sfm.finalize_recon(recon, K, num_images, threshold=threshold)
 sfm.compute_error(recon, K, verbose = True)
 debug.plot_3D(recon)
 
