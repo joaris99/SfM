@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 import numpy as np
 from PIL import Image
+import pickle
 
 @dataclass
 class View:
@@ -8,8 +9,6 @@ class View:
     image: np.ndarray
     R: np.ndarray
     t: np.ndarray
-    keypoints: list
-    descriptors: np.ndarray
     observation_ids: set[int] = field(default_factory=set)
     feature_to_observation: dict[int, int] = field(default_factory=dict)
 
@@ -67,11 +66,12 @@ class Reconstruction:
         self.observations[obs_id] = obs
 
         self.views[view_id].observation_ids.add(obs_id)
-        self.views[view_id].feature_to_observation[feature_idx] = obs_id
+        if feature_idx != None:
+            self.views[view_id].feature_to_observation[feature_idx] = obs_id
         self.points[point_id].observation_ids.add(obs_id)
         return obs_id
     
-    def add_view(self, R, t, keypoints, descriptors, image):
+    def add_view(self, R, t, image):
         view_id = self.next_view_id
         self.next_view_id += 1
 
@@ -80,8 +80,6 @@ class Reconstruction:
             R = R, 
             t = np.asarray(t, dtype=float).reshape(3,),
             image = image, 
-            keypoints=keypoints,
-            descriptors=descriptors,
             observation_ids = set()
         )
 
@@ -105,7 +103,8 @@ class Reconstruction:
     def remove_observation(self, obs_id):
         obs = self.observations.pop(obs_id)
         self.views[obs.view_id].observation_ids.remove(obs_id)
-        del self.views[obs.view_id].feature_to_observation[obs.feature_idx]
+        if obs.feature_idx != None:
+            del self.views[obs.view_id].feature_to_observation[obs.feature_idx]
         self.points[obs.point_id].observation_ids.remove(obs_id)
         
     
@@ -127,6 +126,15 @@ class Reconstruction:
         for point_id in list(self.points.keys()):
             if len(self.points[point_id].observation_ids) < min_observations:
                 self.remove_point(point_id)
+
+    def save(self, filename):
+        with open(filename, "wb") as f:
+            pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    @staticmethod
+    def load(filename):
+        with open(filename, "rb") as f:
+            return pickle.load(f)
 
     
     

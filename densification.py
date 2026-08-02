@@ -8,6 +8,7 @@ import torch
 from PIL import Image
 import cv2
 import geometry
+from scipy.spatial import cKDTree
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -105,7 +106,7 @@ def triangulate_dense_matches(recon, K, view1, view2, match):
         recon.add_observation(view2.id, point_id, None, p2)
 """
 
-def triangulate_dense_matches(recon, K, view1, view2, match, certainty_threshold=0.7, reproj_threshold=2.0, angle_threshold=5.0):
+def triangulate_dense_matches(recon, K, view1, view2, match, merger, certainty_threshold=0.7, reproj_threshold=2.0, angle_threshold=5.0):
     """
     Triangulate dense ROMA correspondences between two registered views.
     """
@@ -115,7 +116,7 @@ def triangulate_dense_matches(recon, K, view1, view2, match, certainty_threshold
     certainty = match["certainty"]
 
     # ------------------------------------------------------------------
-    # Confidence filtering
+    # Confidence filterings
     # ------------------------------------------------------------------
 
     mask = certainty >= certainty_threshold
@@ -202,6 +203,80 @@ def triangulate_dense_matches(recon, K, view1, view2, match, certainty_threshold
         # Add point
         # --------------------------------------------------------------
 
-        point_id = recon.add_point(X, -1)
+        point_id = merger.find(X)
+        if point_id is None:
+            point_id = merger.add(X)
+
         recon.add_observation(p1, view1.id, point_id, None)
         recon.add_observation(p2, view2.id, point_id, None)
+
+
+class PointMerger:
+
+    def __init__(self, recon, merge_radius=0.005, rebuild_every=1000):
+        self.recon = recon
+        self.merge_radius = merge_radius
+        self.rebuild_every = rebuild_every
+
+        self.point_ids = list(recon.points.keys())
+        self.points = np.array(
+            [recon.points[i].xyz for i in self.point_ids],
+            dtype=np.float64
+        )
+
+        self.tree = cKDTree(self.points) if len(self.points) else None
+
+        self.new_points = []
+        self.new_ids = []
+
+    def rebuild(self):
+        if len(self.new_points):
+
+            if len(self.points):
+                self.points = np.vstack([self.points, self.new_points])
+            else:
+                self.points = np.asarray(self.new_points)
+
+            self.point_ids.extend(self.new_ids)
+
+            self.tree = cKDTree(self.points)
+
+            self.new_points.clear()
+            self.new_ids.clear()
+
+    def find(self, X):
+
+        best_dist = np.inf
+        best_id = None
+
+        # Search tree
+        if self.tree is not None:
+            dist, idx = self.tree.query(X)
+
+            if dist < best_dist:
+                best_dist = dist
+                best_id = self.point_ids[idx]
+
+        # Search newly added points
+        for pid, Y in zip(self.new_ids, self.new_points):
+            d = np.linalg.norm(X - Y)
+            if d < best_dist:
+                best_dist = d
+                best_id = pid
+
+        if best_dist < self.merge_radius:
+            return best_id
+
+        return None
+
+    def add(self, X):
+
+        point_id = self.recon.add_point(X, -1)
+
+        self.new_points.append(X)
+        self.new_ids.append(point_id)
+
+        if len(self.new_points) >= self.rebuild_every:
+            self.rebuild()
+
+        return point_id

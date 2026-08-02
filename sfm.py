@@ -75,8 +75,8 @@ def setup(recon, K, im1, im2, kp1, kp2, desc1, desc2, angle_threshold = 0.5):
     with log_time("add initial views, observations and points"):
         C1 = np.concat((np.identity(3), np.array([0, 0, 0]).reshape(3, 1)), axis = 1)
         C2 = np.concat((R, t), axis = 1)
-        v1_id = recon.add_view(np.identity(3), np.array([0, 0, 0]), kp1, desc1, im1)
-        v2_id = recon.add_view(R, t, kp2, desc2, im2)
+        v1_id = recon.add_view(np.identity(3), np.array([0, 0, 0]), im1)
+        v2_id = recon.add_view(R, t, im2)
         
         for i in range(len(idx1)):
             point = geometry.triangulate_optimal(C1, C2, pts1_norm[i], pts2_norm[i])

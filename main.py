@@ -70,7 +70,7 @@ for iteration in tqdm(range(num_images - 2), desc="Incremental SfM"):
 
         with log_time("estimate pose"):
             inliers, R, t = sfm.estimate_pose(K, object_points, image_points)
-            view_id = recon.add_view(R, t, matches[0]["kp_next"], matches[0]["desc_next"], im_next)
+            view_id = recon.add_view(R, t, im_next)
 
         with log_time("add old observations"):
             for global_idx in inliers.ravel():
@@ -90,14 +90,18 @@ for iteration in tqdm(range(num_images - 2), desc="Incremental SfM"):
 with log_time("finalize sparse reconstruction"), log_indent():
     sfm.finalize_recon(recon, K, num_images, threshold=threshold)
 
+# recon.save("recon_sparse.pkl")
+
+# recon = recon.load("recon_sparse.pkl")
 sfm.compute_error(recon, K, verbose=True, mode="sparse")
-# debug.plot_3D(recon)
+debug.plot_3D(recon)
 
 with log_time("load ROMA matches"):
     roma_path = "images/my/roma_matches"
     roma_matches = densification.load_roma_matches(images, roma_path)
 
 with log_time("Densification"):
+    merger = densification.PointMerger(recon, merge_radius=0.01, rebuild_every=1000)
     for i, view1 in tqdm(recon.views.items(), desc="Densification"):
         if i not in roma_matches:
             continue
@@ -107,10 +111,10 @@ with log_time("Densification"):
                 continue
 
             view2 = recon.views[j]
-            densification.triangulate_dense_matches(recon, K, view1, view2, match)
+            densification.triangulate_dense_matches(recon, K, view1, view2, match, merger, reproj_threshold=0.5)
 
-# with log_time("finalize dense reconstruction"), log_indent():
-    # sfm.finalize_recon(recon, K, num_images, threshold=threshold)
+with log_time("finalize dense reconstruction"), log_indent():
+    sfm.finalize_recon(recon, K, num_images, threshold=threshold)
 
 sfm.compute_error(recon, K, verbose=True, mode="dense")
 debug.plot_3D(recon)

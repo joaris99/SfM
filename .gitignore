@@ -3,3 +3,4 @@ logs/
 build/
 COLMAP_datasets/
 image_sets/
+recon_sparse.pkl
