@@ -93,7 +93,8 @@ def setup(recon, K, im1, im2, kp1, kp2, desc1, desc2, angle_threshold = 0.5):
 
 
 def select_candidate_views(current_idx):
-
+    # When changing this function to select different candidate views, it might be a good idea to change 
+    # the ROMA loader, in a way which makes it add any new image pairs, while keeping the old ones
     candidate_views = []
     # Last 5 views
     for offset in range(1, 6):
@@ -314,7 +315,7 @@ def finalize_recon(recon, K, num_images, threshold = 5):
             recon.remove_point(i)
 
 
-def compute_error(recon, K, verbose = False):
+def compute_error(recon, K, verbose = False, mode = "unknown"):
     with log_time("compute reprojection error"):
         errors = []
 
@@ -334,6 +335,7 @@ def compute_error(recon, K, verbose = False):
             errors.append(err)
 
         errors = np.asarray(errors)
+        logger.info(f"reconstryuction type:      {mode}")
         logger.info(f"Observations:              {len(errors):.3f}")
         logger.info(f"Points:                    {len(recon.points):.3f}")
         logger.info(f"Mean reprojection error:   {errors.mean():.3f} px")
@@ -341,6 +343,7 @@ def compute_error(recon, K, verbose = False):
         logger.info(f"Std:                       {errors.std():.3f} px")
         logger.info(f"Max:                       {errors.max():.3f} px")
         if verbose:
+            print(f"reconstryuction type:      {mode}")
             print(f"Observations:              {len(errors):.3f}")
             print(f"Points:                    {len(recon.points):.3f}")
             print(f"Mean reprojection error:   {errors.mean():.3f} px")

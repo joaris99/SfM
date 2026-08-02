@@ -50,7 +50,7 @@ class Reconstruction:
         if point_id not in self.points:
             raise ValueError(f"point_id {point_id} does not exist")
         
-        if feature_idx in  self.views[view_id].feature_to_observation:
+        if feature_idx in  self.views[view_id].feature_to_observation and feature_idx != None:
             raise ValueError(f"Feature {feature_idx} already has an observation.")
 
         obs_id = self.next_obs_id

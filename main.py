@@ -5,6 +5,7 @@ import data_structure
 from tqdm import tqdm
 import sfm
 import correspondences
+import densification
 
 from scipy.spatial.transform import Rotation
 
@@ -86,8 +87,32 @@ for iteration in tqdm(range(num_images - 2), desc="Incremental SfM"):
                                         result["pts1"], result["pts2"], result["idx1"], result["idx2"], 
                                         iteration, threshold=threshold,  angle_threshold=angle_threshold)
 
-sfm.finalize_recon(recon, K, num_images, threshold=threshold)
-sfm.compute_error(recon, K, verbose = True)
+with log_time("finalize sparse reconstruction"), log_indent():
+    sfm.finalize_recon(recon, K, num_images, threshold=threshold)
+
+sfm.compute_error(recon, K, verbose=True, mode="sparse")
+# debug.plot_3D(recon)
+
+with log_time("load ROMA matches"):
+    roma_path = "images/my/roma_matches"
+    roma_matches = densification.load_roma_matches(images, roma_path)
+
+with log_time("Densification"):
+    for i, view1 in tqdm(recon.views.items(), desc="Densification"):
+        if i not in roma_matches:
+            continue
+
+        for j, match in roma_matches[i].items():
+            if j not in recon.views:
+                continue
+
+            view2 = recon.views[j]
+            densification.triangulate_dense_matches(recon, K, view1, view2, match)
+
+# with log_time("finalize dense reconstruction"), log_indent():
+    # sfm.finalize_recon(recon, K, num_images, threshold=threshold)
+
+sfm.compute_error(recon, K, verbose=True, mode="dense")
 debug.plot_3D(recon)
 
 # gaussian_scene = gaussian_data.GaussianScene.from_reconstruction(recon, K)
