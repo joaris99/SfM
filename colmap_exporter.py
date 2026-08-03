@@ -10,17 +10,16 @@ class ColmapExporter:
     def __init__(
         self,
         reconstruction,
-        gaussian_scene,
         K,
         image_width,
         image_height
     ):
         self.reconstruction = reconstruction
-        self.gaussian_scene = gaussian_scene
 
         self.K = K
         self.width = image_width
         self.height = image_height
+        self.obs_to_feature_idx = {}
 
 
     def export(self, output_dir):
@@ -74,7 +73,10 @@ class ColmapExporter:
         Copy images into COLMAP images folder.
         """
 
-        for view in self.reconstruction.views.values():
+        for view in sorted(
+            self.reconstruction.views.values(),
+            key=lambda v: v.id
+        ):
 
             filename = (
                 f"{view.id:06d}.png"
@@ -162,7 +164,10 @@ class ColmapExporter:
             )
 
 
-            for view in self.reconstruction.views.values():
+            for view in sorted(
+                self.reconstruction.views.values(),
+                key=lambda v: v.id
+            ):
 
                 # COLMAP expects world -> camera rotation
                 R = view.R
@@ -187,25 +192,17 @@ class ColmapExporter:
                     f"{view.id:06d}.png\n"
                 )
 
+                observations = sorted(view.observation_ids)
 
-                points=[]
+                points = []
 
+                for feature_idx, obs_id in enumerate(observations):
 
-                for obs_id in view.observation_ids:
+                    obs = self.reconstruction.observations[obs_id]
 
-                    obs = (
-                        self.reconstruction
-                        .observations[obs_id]
-                    )
+                    self.obs_to_feature_idx[(view.id, obs_id)] = feature_idx
 
-
-                    # IMPORTANT:
-                    # COLMAP wants pixel coordinates.
-                    # Your observations are normalized.
-                    uv = self.normalized_to_pixel(
-                        obs.xy
-                    )
-
+                    uv = obs.xy
 
                     points.append(
                         (
@@ -251,21 +248,21 @@ class ColmapExporter:
             )
 
 
-            for idx, gaussian in enumerate(
-                self.gaussian_scene.gaussians
+            for point in sorted(
+                self.reconstruction.points.values(),
+                key=lambda p: p.id
             ):
 
 
-                xyz = gaussian.xyz
 
+                xyz = point.xyz
 
                 rgb = (
                     np.clip(
-                        gaussian.color,
+                        self.get_color(point),
                         0,
                         1
-                    )
-                    *255
+                    ) * 255
                 ).astype(int)
 
 
@@ -281,26 +278,16 @@ class ColmapExporter:
                 #
                 # Better: store point_id inside Gaussian.
 
-                if idx in self.reconstruction.points:
+                for obs_id in point.observation_ids:
 
-                    point = (
-                        self.reconstruction
-                        .points[idx]
+                    obs = self.reconstruction.observations[obs_id]
+
+                    track.append(
+                        (
+                            obs.view_id,
+                            self.obs_to_feature_idx[(obs.view_id, obs_id)]
+                        )
                     )
-
-                    for obs_id in point.observation_ids:
-
-                        obs = (
-                            self.reconstruction
-                            .observations[obs_id]
-                        )
-
-                        track.append(
-                            (
-                                obs.view_id,
-                                obs.feature_idx
-                            )
-                        )
 
 
                 track_string = " ".join(
@@ -313,7 +300,7 @@ class ColmapExporter:
 
 
                 f.write(
-                    f"{idx} "
+                    f"{point.id} "
                     f"{xyz[0]} "
                     f"{xyz[1]} "
                     f"{xyz[2]} "
@@ -352,3 +339,27 @@ class ColmapExporter:
                 v
             ]
         )
+
+    def get_color(self, point):
+
+        colors = []
+
+        for obs_id in point.observation_ids:
+
+            obs = self.reconstruction.observations[obs_id]
+            view = self.reconstruction.views[obs.view_id]
+
+            u = int(round(obs.xy[0]))
+            v = int(round(obs.xy[1]))
+
+            if (
+                0 <= u < view.image.shape[1]
+                and
+                0 <= v < view.image.shape[0]
+            ):
+                colors.append(view.image[v, u] / 255.0)
+
+        if colors:
+            return np.mean(colors, axis=0)
+
+        return np.array([1.0, 1.0, 1.0])
