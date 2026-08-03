@@ -101,7 +101,7 @@ with log_time("load ROMA matches"):
     roma_matches = densification.load_roma_matches(images, roma_path)
 
 with log_time("Densification"):
-    merger = densification.PointMerger(recon, merge_radius=0.01, rebuild_every=1000)
+    merger = densification.PointMerger(recon, merge_radius=0.01)
     for i, view1 in tqdm(recon.views.items(), desc="Densification"):
         if i not in roma_matches:
             continue

@@ -78,34 +78,6 @@ def load_roma_matches(images, path):
 
     return roma_matches
 
-"""
-def triangulate_dense_matches(recon, K, view1, view2, match):
-
-    pts1 = match["pts1"]
-    pts2 = match["pts2"]
-    certainty = match["certainty"]
-
-    P1 = K @ np.hstack((view1.R, view1.t.reshape(3, 1)))
-    P2 = K @ np.hstack((view2.R, view2.t.reshape(3, 1)))
-
-    for p1, p2, conf in zip(pts1, pts2, certainty):
-
-        if conf < 0.7:
-            continue
-
-        X = geometry.triangulate(P1, P2, p1, p2)
-
-        # positive depth
-        # triangulation angle
-        # reprojection error
-        # duplicate test
-
-        point_id = recon.add_point(X)
-
-        recon.add_observation(view1.id, point_id, None, p1)
-        recon.add_observation(view2.id, point_id, None, p2)
-"""
-
 def triangulate_dense_matches(recon, K, view1, view2, match, merger, certainty_threshold=0.7, reproj_threshold=2.0, angle_threshold=5.0):
     """
     Triangulate dense ROMA correspondences between two registered views.
@@ -115,10 +87,6 @@ def triangulate_dense_matches(recon, K, view1, view2, match, merger, certainty_t
     pts2 = match["pts2"]
     certainty = match["certainty"]
 
-    # ------------------------------------------------------------------
-    # Confidence filterings
-    # ------------------------------------------------------------------
-
     mask = certainty >= certainty_threshold
 
     if np.count_nonzero(mask) == 0:
@@ -127,156 +95,144 @@ def triangulate_dense_matches(recon, K, view1, view2, match, merger, certainty_t
     pts1 = pts1[mask]
     pts2 = pts2[mask]
 
-    # ------------------------------------------------------------------
     # Convert to normalized image coordinates
-    # ------------------------------------------------------------------
-
     pts1_norm = cv2.undistortPoints(pts1.reshape(-1, 1, 2), K, None).reshape(-1, 2)
-
     pts2_norm = cv2.undistortPoints(pts2.reshape(-1, 1, 2), K, None,).reshape(-1, 2)
 
-    # ------------------------------------------------------------------
     # Projection matrices WITHOUT intrinsics
-    # ------------------------------------------------------------------
-
     P1 = np.hstack((view1.R, view1.t.reshape(3, 1)))
     P2 = np.hstack((view2.R, view2.t.reshape(3, 1)))
 
-    # ------------------------------------------------------------------
     # Batch triangulation
-    # ------------------------------------------------------------------
-
     points4d = cv2.triangulatePoints(P1, P2, pts1_norm.T, pts2_norm.T)
-
     points3d = (points4d[:3] / points4d[3]).T
 
     # Camera centres
     C1 = -view1.R.T @ view1.t
     C2 = -view2.R.T @ view2.t
 
-    for X, p1, p2 in zip(points3d, pts1, pts2):
+    # Camera coordinates
+    X_cam1 = (view1.R @ points3d.T).T + view1.t
+    X_cam2 = (view2.R @ points3d.T).T + view2.t
 
-        # --------------------------------------------------------------
-        # Positive depth
-        # --------------------------------------------------------------
+    depth_mask = (X_cam1[:, 2] > 0) & (X_cam2[:, 2] > 0)
 
-        X_cam1 = view1.R @ X + view1.t
-        X_cam2 = view2.R @ X + view2.t
+    v1 = points3d - C1
+    v2 = points3d - C2
 
-        if X_cam1[2] <= 0 or X_cam2[2] <= 0:
-            continue
+    v1 /= np.linalg.norm(v1, axis=1, keepdims=True)
+    v2 /= np.linalg.norm(v2, axis=1, keepdims=True)
 
-        # --------------------------------------------------------------
-        # Triangulation angle
-        # --------------------------------------------------------------
+    angles = np.degrees(np.arccos(
+        np.clip(np.sum(v1 * v2, axis=1), -1.0, 1.0)
+    ))
 
-        v1 = X - C1
-        v2 = X - C2
+    angle_mask = angles >= angle_threshold
 
-        v1 /= np.linalg.norm(v1)
-        v2 /= np.linalg.norm(v2)
+    X_h = np.hstack([points3d, np.ones((len(points3d), 1))])
 
-        angle = np.degrees(np.arccos(np.clip(np.dot(v1, v2), -1.0, 1.0)))
+    proj1 = (K @ (P1 @ X_h.T)).T
+    proj2 = (K @ (P2 @ X_h.T)).T
 
-        if angle < angle_threshold:
-            continue
+    proj1 = proj1[:, :2] / proj1[:, 2:3]
+    proj2 = proj2[:, :2] / proj2[:, 2:3]
 
-        # --------------------------------------------------------------
-        # Reprojection error
-        # --------------------------------------------------------------
+    err1 = np.linalg.norm(proj1 - pts1, axis=1)
+    err2 = np.linalg.norm(proj2 - pts2, axis=1)
 
-        X_h = np.append(X, 1.0)
+    reproj_mask = np.maximum(err1, err2) <= reproj_threshold
 
-        x1_proj = K @ (P1 @ X_h)
-        x1_proj = x1_proj[:2] / x1_proj[2]
 
-        x2_proj = K @ (P2 @ X_h)
-        x2_proj = x2_proj[:2] / x2_proj[2]
+    mask = depth_mask & angle_mask & reproj_mask
 
-        err1 = np.linalg.norm(x1_proj - p1)
-        err2 = np.linalg.norm(x2_proj - p2)
+    points3d = points3d[mask]
+    pts1 = pts1[mask]
+    pts2 = pts2[mask]
 
-        if max(err1, err2) > reproj_threshold:
-            continue
+    point_ids = merger.find_batch(points3d)
 
-        # --------------------------------------------------------------
-        # Add point
-        # --------------------------------------------------------------
+    # Indices of points not already in reconstruction
+    new_mask = point_ids == -1
 
-        point_id = merger.find(X)
-        if point_id is None:
-            point_id = merger.add(X)
+    if np.any(new_mask):
 
-        recon.add_observation(p1, view1.id, point_id, None)
-        recon.add_observation(p2, view2.id, point_id, None)
+        new_points = points3d[new_mask]
+
+        # Merge duplicates inside this batch
+        tree = cKDTree(new_points)
+
+        groups = tree.query_ball_tree(tree, merger.merge_radius)
+
+        representative = {}
+        keep = np.ones(len(new_points), dtype=bool)
+
+        for i, nbrs in enumerate(groups):
+            if i in representative:
+                keep[i] = False
+                continue
+
+            pid = recon.add_point(new_points[i], -1)
+
+            representative[i] = pid
+
+            for j in nbrs:
+                representative[j] = pid
+
+        # Fill point ids
+        new_indices = np.flatnonzero(new_mask)
+
+        for local_idx, global_idx in enumerate(new_indices):
+            point_ids[global_idx] = representative[local_idx]
+
+        # Rebuild once after all insertions
+        merger.rebuild()
+
+    # Add observations
+    for pid, p1, p2 in zip(point_ids, pts1, pts2):
+        recon.add_observation(p1, view1.id, pid, None)
+        recon.add_observation(p2, view2.id, pid, None)
 
 
 class PointMerger:
 
-    def __init__(self, recon, merge_radius=0.005, rebuild_every=1000):
+    def __init__(self, recon, merge_radius=0.005):
         self.recon = recon
         self.merge_radius = merge_radius
-        self.rebuild_every = rebuild_every
 
-        self.point_ids = list(recon.points.keys())
-        self.points = np.array(
-            [recon.points[i].xyz for i in self.point_ids],
-            dtype=np.float64
-        )
+        self.point_ids = np.array(list(recon.points.keys()), dtype=np.int32)
 
-        self.tree = cKDTree(self.points) if len(self.points) else None
+        if len(self.point_ids):
+            self.points = np.array(
+                [recon.points[i].xyz for i in self.point_ids],
+                dtype=np.float64
+            )
+            self.tree = cKDTree(self.points)
+        else:
+            self.points = np.empty((0,3))
+            self.tree = None
 
-        self.new_points = []
-        self.new_ids = []
+    def find_batch(self, X):
+        """
+        Returns an array of point ids.
+        -1 means the point is not yet in the reconstruction.
+        """
+
+        point_ids = np.full(len(X), -1, dtype=np.int32)
+
+        if self.tree is None:
+            return point_ids
+
+        dist, idx = self.tree.query(X)
+
+        valid = dist < self.merge_radius
+        point_ids[valid] = self.point_ids[idx[valid]]
+
+        return point_ids
 
     def rebuild(self):
-        if len(self.new_points):
-
-            if len(self.points):
-                self.points = np.vstack([self.points, self.new_points])
-            else:
-                self.points = np.asarray(self.new_points)
-
-            self.point_ids.extend(self.new_ids)
-
-            self.tree = cKDTree(self.points)
-
-            self.new_points.clear()
-            self.new_ids.clear()
-
-    def find(self, X):
-
-        best_dist = np.inf
-        best_id = None
-
-        # Search tree
-        if self.tree is not None:
-            dist, idx = self.tree.query(X)
-
-            if dist < best_dist:
-                best_dist = dist
-                best_id = self.point_ids[idx]
-
-        # Search newly added points
-        for pid, Y in zip(self.new_ids, self.new_points):
-            d = np.linalg.norm(X - Y)
-            if d < best_dist:
-                best_dist = d
-                best_id = pid
-
-        if best_dist < self.merge_radius:
-            return best_id
-
-        return None
-
-    def add(self, X):
-
-        point_id = self.recon.add_point(X, -1)
-
-        self.new_points.append(X)
-        self.new_ids.append(point_id)
-
-        if len(self.new_points) >= self.rebuild_every:
-            self.rebuild()
-
-        return point_id
+        self.point_ids = np.array(list(self.recon.points.keys()), dtype=np.int32)
+        self.points = np.array(
+            [self.recon.points[i].xyz for i in self.point_ids],
+            dtype=np.float64
+        )
+        self.tree = cKDTree(self.points)
