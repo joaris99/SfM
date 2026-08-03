@@ -9,6 +9,7 @@ import densification
 import colmap_exporter
 import open3d as o3d
 import dense_colmap
+import poisson_surface_reconstruction
 
 from scipy.spatial.transform import Rotation
 
@@ -25,9 +26,7 @@ images, K, distortion = sfm.load_data(data_path)
 num_images = len(images)
 keypoints = []
 descriptors = []
-
-
-
+"""
 with log_time("compute keypoint/descriptor pairs"):
     for im in images:
         kp, desc = correspondences.find_keypoints(im)
@@ -95,9 +94,9 @@ for iteration in tqdm(range(num_images - 2), desc="Incremental SfM"):
 with log_time("finalize sparse reconstruction"), log_indent():
     sfm.finalize_sparse(recon, K, num_images, threshold=threshold)
 
-# recon.save("recon_sparse.pkl")
-
-# recon = recon.load("recon_sparse.pkl")
+# recon.save("local_files/recon_sparse.pkl")
+"""
+recon = recon.load("local_files/recon_sparse.pkl")
 sfm.compute_error(recon, K, verbose=True, mode="sparse")
 debug.plot_3D(recon)
 
@@ -123,7 +122,11 @@ with log_time("finalize dense reconstruction"), log_indent():
 
 
 sfm.compute_error(recon, K, verbose=True, mode="dense")
-debug.plot_3D(recon)
+# debug.plot_3D(recon)
+
+path = "local_files/my_dense"
+poisson_surface_reconstruction.extract_point_cloud(recon, path)
+poisson_surface_reconstruction.reconstruction(path)
 
 # exporter = colmap_exporter.ColmapExporter(recon, K, 2016, 1512)
 # exporter.export("my")
