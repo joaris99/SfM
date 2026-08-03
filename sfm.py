@@ -303,16 +303,27 @@ def remove_high_reprj_err_points(recon, K, threshold = 5):
 
 
 
-def finalize_recon(recon, K, num_images, threshold = 5):
+def finalize_sparse(recon, K, num_images, threshold = 5):
+    points_to_remove = []
+    for point in recon.points.values():
+        if len(point.observation_ids) == 2 and num_images - point.created_iteration > 1:
+                points_to_remove.append(point.id)
+    for i in points_to_remove:
+        recon.remove_point(i)
     ba(recon, K)
     remove_high_reprj_err_points(recon, K, threshold=threshold)
-    with log_time("remove points with 2 observations"):
-        points_to_remove = []
-        for point in recon.points.values():
-            if len(point.observation_ids) == 2 and num_images - point.created_iteration > 1:
-                    points_to_remove.append(point.id)
-        for i in points_to_remove:
-            recon.remove_point(i)
+    
+
+def finalize_dense(recon, K, num_images, threshold = 2):
+    points_to_remove = []
+    for point in recon.points.values():
+        if len(point.observation_ids) == 2 and num_images - point.created_iteration > 1:
+                points_to_remove.append(point.id)
+    for i in points_to_remove:
+        recon.remove_point(i)
+    ba(recon, K)
+    remove_high_reprj_err_points(recon, K, threshold=threshold)
+        
 
 
 def compute_error(recon, K, verbose = False, mode = "unknown"):

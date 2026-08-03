@@ -23,7 +23,7 @@ def precompute_roma_pairs(num_images):
     for current_idx in range(2, num_images):
         candidate_views = sfm.select_candidate_views(current_idx)
 
-        for prev_idx in candidate_views:
+        for prev_idx in candidate_views[:1]:
             pairs.add((prev_idx, current_idx))
 
     return sorted(pairs)

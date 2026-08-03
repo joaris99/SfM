@@ -114,7 +114,7 @@ with log_time("Densification"):
             densification.triangulate_dense_matches(recon, K, view1, view2, match, merger, reproj_threshold=0.5)
 
 with log_time("finalize dense reconstruction"), log_indent():
-    sfm.finalize_recon(recon, K, num_images, threshold=threshold)
+    sfm.finalize_dense(recon, K, num_images, threshold=threshold)
 
 sfm.compute_error(recon, K, verbose=True, mode="dense")
 debug.plot_3D(recon)
